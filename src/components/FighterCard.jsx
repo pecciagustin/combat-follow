@@ -13,7 +13,7 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged, 
     if (status === 'live') return <span className="badge badge-live">En vivo</span>
     if (status === 'upcoming') return <span className="badge badge-upcoming">Próximo</span>
     if (status === 'finished') return <span className="badge badge-finished">Finalizado</span>
-    if (status === 'notfound') return <span className="badge badge-notfound">Sin partido</span>
+    if (status === 'notfound') return <span className="badge badge-notfound">Sin combate</span>
     if (status === 'error') return <span className="badge badge-error">Error</span>
     return null
   }
@@ -70,7 +70,7 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged, 
             <div className="card-message error">{matchData?.message || 'Error al obtener datos'}</div>
           )}
           {!isLoading && status === 'notfound' && (
-            <div className="card-message">Sin partidos encontrados</div>
+            <div className="card-message">Sin combates encontrados</div>
           )}
           {!isLoading && !matchData && (
             <div className="card-message">Presiona ↻ para actualizar</div>
@@ -95,7 +95,7 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged, 
               {fights.length > 1 && (
                 <div className="card-tree">
                   <button className="card-tree-toggle" onClick={(e) => { e.stopPropagation(); setTreeOpen((o) => !o) }}>
-                    Ver bracket ({fights.length} peleas) {treeOpen ? '▲' : '▼'}
+                    Ver bracket ({fights.length} combates) {treeOpen ? '▲' : '▼'}
                   </button>
                   {treeOpen && (
                     <div className="card-tree-body">
