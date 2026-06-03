@@ -323,7 +323,7 @@ function parseBjjCompSystemHtml(html, fighterName) {
 }
 
 async function scrapeOneFighter(fighter) {
-  if (fighter.bracketUrl.includes('bjjcompsystem.com')) {
+  if (fighter.bracketUrl.includes('bjjcompsystem.com') && !fighter.bracketUrl.includes('smoothcomp') && !fighter.bracketUrl.includes('ajptour')) {
     const html = await fetchHtml(fighter.bracketUrl)
     const result = parseBjjCompSystemHtml(html, fighter.name)
     if (result) return result
