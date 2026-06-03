@@ -252,7 +252,9 @@ function parseBjjCompSystemHtml(html, fighterName) {
       if (n && !names.includes(n)) names.push(n)
     }
 
-    if (names.some(n => n.toLowerCase().includes(nameLower))) {
+    // Only include fights where the fighter is one of the first 2 competitors
+    // (3+ names = bracket preview artifact showing potential future opponents)
+    if (names.length <= 2 && names.some(n => n.toLowerCase().includes(nameLower))) {
       matchBlocks.push({ fightNum, matNum, time, names })
     }
   }
