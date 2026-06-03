@@ -50,9 +50,12 @@ function parseMatchData(text, fighterName) {
       if (/^###/.test(lines[i])) { roundName = lines[i].replace(/^#+\s*/, '').trim(); break }
     }
 
-    // Find opponent in nearby lines
-    const windowLines = lines.slice(Math.max(0, idx - 6), idx + 6)
-    const opponent = findOpponent(windowLines, fighterName)
+    // Find opponent within this match block: from matchRef line to next matchRef line
+    const matchRefLineIdx = lines.indexOf(matchRef, Math.max(0, idx - 15))
+    const nextRefIdx = lines.findIndex((l, i) => i > matchRefLineIdx + 1 && /^(\d+)\s*-\s*(\d+)$/.test(l))
+    const blockEnd = nextRefIdx === -1 ? Math.min(lines.length, matchRefLineIdx + 20) : nextRefIdx
+    const blockLines = lines.slice(matchRefLineIdx, blockEnd)
+    const opponent = findOpponent(blockLines, fighterName)
 
     // Find result number next to fighter (1 = gold, 2 = silver, 3 = bronze)
     let result = null
