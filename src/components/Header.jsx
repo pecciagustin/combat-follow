@@ -7,7 +7,10 @@ export default function Header({ isMonitoring, lastUpdated, onRefresh, isLoading
     <header className="header">
       <div className="header-title">
         <div className={`pulse-dot${isMonitoring ? ' active' : ''}`} />
-        COMBAT FOLLOW
+        <div>
+          <div className="header-title-main">COMBAT FOLLOW</div>
+          <div className="header-subtitle">by Frames and Chokes</div>
+        </div>
       </div>
       <div className="header-actions">
         {timeStr && <span className="header-updated">{timeStr}</span>}
