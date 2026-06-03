@@ -1,9 +1,11 @@
 import { QRCodeSVG } from 'qrcode.react'
 
-export default function QRModal({ fighters, onClose }) {
-  const encoded = btoa(JSON.stringify(
-    fighters.map(({ name, bracketUrl }) => ({ name, bracketUrl }))
-  ))
+export default function QRModal({ fighters, emailConfig, onClose }) {
+  const payload = {
+    fighters: fighters.map(({ name, bracketUrl }) => ({ name, bracketUrl })),
+    email: emailConfig,
+  }
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
   const url = `${window.location.origin}${window.location.pathname}?import=${encoded}`
 
   return (
@@ -24,7 +26,7 @@ export default function QRModal({ fighters, onClose }) {
         </div>
         <p className="qr-hint">
           Abre la cámara del iPhone y apunta al QR.<br />
-          Se abrirá la app con todos los luchadores cargados.
+          Se abrirá la app con luchadores y email configurados.
         </p>
         <p className="qr-fighters">
           {fighters.length} luchador{fighters.length !== 1 ? 'es' : ''}: {fighters.map(f => f.name).join(', ')}

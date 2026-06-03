@@ -150,14 +150,22 @@ export default function App() {
     const importParam = params.get('import')
     if (importParam) {
       try {
-        const imported = JSON.parse(atob(importParam))
-        if (Array.isArray(imported)) {
-          const newFighters = imported.map((f) => ({ ...f, id: crypto.randomUUID() }))
+        const decoded = JSON.parse(decodeURIComponent(escape(atob(importParam))))
+        // Support both old format (array) and new format ({ fighters, email })
+        const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
+        const importedEmail = !Array.isArray(decoded) ? decoded.email : null
+
+        if (importedFighters.length > 0) {
+          const newFighters = importedFighters.map((f) => ({ ...f, id: crypto.randomUUID() }))
           setFighters((prev) => {
             const existingUrls = new Set(prev.map((f) => f.bracketUrl))
             const toAdd = newFighters.filter((f) => !existingUrls.has(f.bracketUrl))
             return [...prev, ...toAdd]
           })
+        }
+        if (importedEmail && importedEmail.serviceId) {
+          setEmailConfig(importedEmail)
+          localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(importedEmail))
         }
       } catch { /* ignore bad param */ }
       // Clean the URL without reloading
@@ -304,7 +312,7 @@ export default function App() {
       )}
 
       {showQR && (
-        <QRModal fighters={fighters} onClose={() => setShowQR(false)} />
+        <QRModal fighters={fighters} emailConfig={emailConfig} onClose={() => setShowQR(false)} />
       )}
     </>
   )

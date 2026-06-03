@@ -63,6 +63,9 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged, 
       {/* ── Expanded detail ── */}
       {expanded && (
         <div className="card-detail">
+          {isLoading && (
+            <div className="card-message">Cargando datos…</div>
+          )}
           {!isLoading && status === 'error' && (
             <div className="card-message error">{matchData?.message || 'Error al obtener datos'}</div>
           )}
