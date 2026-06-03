@@ -25,6 +25,12 @@ function saveFighters(fighters) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(fighters))
 }
 
+function vibrate(type) {
+  if (!navigator.vibrate) return
+  if (type === 'live') navigator.vibrate([300, 100, 300, 100, 300])
+  if (type === 'change') navigator.vibrate([200, 100, 200])
+}
+
 function gridClass(count) {
   if (count === 1) return 'count-1'
   if (count === 2) return 'count-2'
@@ -87,7 +93,15 @@ export default function App() {
       if (newChangedIds.size > 0) {
         setChangedIds((prev) => new Set([...prev, ...newChangedIds]))
         setChangelog((prev) => [...prev, ...newEntries])
+        vibrate('change')
       }
+
+      // Vibrate when any fighter goes live
+      const wentLive = results.some(({ id, data }) => {
+        const old = prevMatchRef.current[id]
+        return data?.status === 'live' && old?.status !== 'live'
+      })
+      if (wentLive) vibrate('live')
 
       setLastUpdated(now)
     } catch (err) {
@@ -111,6 +125,10 @@ export default function App() {
 
   function editFighter(id, updates) {
     setFighters((prev) => prev.map((f) => f.id === id ? { ...f, ...updates } : f))
+  }
+
+  function updateNote(id, note) {
+    setFighters((prev) => prev.map((f) => f.id === id ? { ...f, note } : f))
   }
 
   function addFighter(fighter) {
@@ -209,6 +227,7 @@ export default function App() {
                     matchData={matchMap[fighter.id] ?? null}
                     isLoading={isLoading && !matchMap[fighter.id]}
                     isChanged={changedIds.has(fighter.id)}
+                    onNoteChange={(note) => updateNote(fighter.id, note)}
                   />
                 ))}
               </div>

@@ -1,4 +1,4 @@
-export default function FighterCard({ fighter, matchData, isLoading, isChanged }) {
+export default function FighterCard({ fighter, matchData, isLoading, isChanged, onNoteChange }) {
   const status = matchData?.status
 
   function getStatusBadge() {
@@ -73,6 +73,14 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged }
       {!isLoading && !matchData && (
         <div className="card-message">Presiona ↻ para actualizar</div>
       )}
+
+      <textarea
+        className="card-note"
+        placeholder="Nota…"
+        value={fighter.note || ''}
+        onChange={(e) => onNoteChange(e.target.value)}
+        rows={1}
+      />
     </div>
   )
 }

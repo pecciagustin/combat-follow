@@ -487,6 +487,26 @@ button:active {
 
 .card-mat span { color: var(--text); }
 
+.card-note {
+  width: 100%;
+  margin-top: 10px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 8px 0 0;
+  resize: none;
+  outline: none;
+  line-height: 1.4;
+  min-height: 28px;
+  overflow: hidden;
+}
+
+.card-note::placeholder { color: #444; }
+.card-note:focus { color: var(--text); }
+
 .card-message {
   font-size: 13px;
   color: var(--text-secondary);
