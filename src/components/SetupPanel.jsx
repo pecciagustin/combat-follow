@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR }) {
+export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner }) {
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
   const [emailDraft, setEmailDraft] = useState(emailConfig)
@@ -88,11 +88,16 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div className="fighter-list-header">Luchadores ({fighters.length})</div>
-          {fighters.length > 0 && (
-            <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={onShowQR}>
-              📱 Generar QR
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={onShowScanner}>
+              📷 Escanear QR
             </button>
-          )}
+            {fighters.length > 0 && (
+              <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={onShowQR}>
+                📱 Generar QR
+              </button>
+            )}
+          </div>
         </div>
         <div style={{ marginTop: 8 }}>
           {fighters.length === 0 ? (

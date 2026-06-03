@@ -6,6 +6,7 @@ import ChangeLog from './components/ChangeLog'
 import { scrapeAllFighters } from './api/scrape'
 import { sendChangeAlert, sendLiveAlert } from './api/email'
 import QRModal from './components/QRModal'
+import QRScanner from './components/QRScanner'
 
 const STORAGE_KEY = 'combat-follow-fighters'
 const EMAIL_CONFIG_KEY = 'combat-follow-email'
@@ -61,6 +62,7 @@ export default function App() {
   const [intervalSec, setIntervalSec] = useState(120)
   const [emailConfig, setEmailConfig] = useState(loadEmailConfig)
   const [showQR, setShowQR] = useState(false)
+  const [showScanner, setShowScanner] = useState(false)
   const intervalRef = useRef(null)
   const prevMatchRef = useRef({})
 
@@ -202,6 +204,33 @@ export default function App() {
     })
   }
 
+  function handleScanResult(data) {
+    setShowScanner(false)
+    try {
+      // Extract ?import= param from scanned URL
+      const url = new URL(data)
+      const importParam = url.searchParams.get('import')
+      if (!importParam) return
+      const decoded = JSON.parse(decodeURIComponent(escape(atob(importParam))))
+      const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
+      const importedEmail = !Array.isArray(decoded) ? decoded.email : null
+      if (importedFighters.length > 0) {
+        const newFighters = importedFighters.map((f) => ({ ...f, id: crypto.randomUUID() }))
+        setFighters((prev) => {
+          const existingUrls = new Set(prev.map((f) => f.bracketUrl))
+          const toAdd = newFighters.filter((f) => !existingUrls.has(f.bracketUrl))
+          return [...prev, ...toAdd]
+        })
+      }
+      if (importedEmail?.serviceId) {
+        setEmailConfig(importedEmail)
+        localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(importedEmail))
+      }
+    } catch {
+      alert('QR inválido o no reconocido.')
+    }
+  }
+
   function handleManualRefresh() {
     setChangedIds(new Set())
     refresh()
@@ -256,6 +285,7 @@ export default function App() {
             localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(cfg))
           }}
           onShowQR={() => setShowQR(true)}
+          onShowScanner={() => setShowScanner(true)}
         />
       )}
 
@@ -313,6 +343,9 @@ export default function App() {
 
       {showQR && (
         <QRModal fighters={fighters} emailConfig={emailConfig} onClose={() => setShowQR(false)} />
+      )}
+      {showScanner && (
+        <QRScanner onResult={handleScanResult} onClose={() => setShowScanner(false)} />
       )}
     </>
   )
