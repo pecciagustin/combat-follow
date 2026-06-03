@@ -63,6 +63,7 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged }
             {matchData.mat && (
               <div className="card-mat">
                 Mat <span>{matchData.mat}</span>
+                {matchData.fight && <> · Fight <span>{matchData.fight}</span></>}
               </div>
             )}
           </div>

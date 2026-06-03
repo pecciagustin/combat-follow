@@ -30,9 +30,10 @@ function parseMatchData(text, fighterName) {
   // --- Tatami ---
   // Search backwards from the fighter for the nearest "N-NN" match reference
   let mat = null
+  let fight = null
   for (let i = fighterIdx; i >= 0; i--) {
     const m = lines[i].match(/^(\d+)\s*-\s*(\d+)$/)
-    if (m) { mat = m[1]; break }
+    if (m) { mat = m[1]; fight = m[2]; break }
   }
 
   // --- Opponent ---
@@ -59,6 +60,7 @@ function parseMatchData(text, fighterName) {
     category,
     time,
     mat,
+    fight,
     status,
   }
 }
