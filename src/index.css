@@ -44,6 +44,7 @@ html, body {
   border-bottom: 1px solid var(--border);
   padding: 12px 16px;
   padding-top: calc(12px + env(safe-area-inset-top));
+  padding-right: calc(16px + env(safe-area-inset-right));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -609,6 +610,7 @@ button:active {
 .changelog {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .changelog-toggle {
