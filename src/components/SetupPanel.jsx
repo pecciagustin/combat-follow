@@ -3,6 +3,14 @@ import { useState } from 'react'
 export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR }) {
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
+  const [emailDraft, setEmailDraft] = useState(emailConfig)
+  const [emailSaved, setEmailSaved] = useState(false)
+
+  function handleEmailSave() {
+    onEmailConfig(emailDraft)
+    setEmailSaved(true)
+    setTimeout(() => setEmailSaved(false), 2000)
+  }
   const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
   const [editUrl, setEditUrl] = useState('')
@@ -179,15 +187,22 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
             <input
               type={type}
               placeholder={placeholder}
-              value={emailConfig[key] || ''}
-              onChange={(e) => onEmailConfig({ ...emailConfig, [key]: e.target.value })}
+              value={emailDraft[key] || ''}
+              onChange={(e) => setEmailDraft((d) => ({ ...d, [key]: e.target.value }))}
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="off"
             />
           </div>
         ))}
-        <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
+        <button
+          className="btn-primary"
+          style={{ width: '100%', marginTop: 4 }}
+          onClick={handleEmailSave}
+        >
+          {emailSaved ? '✓ Guardado' : 'Guardar'}
+        </button>
+        <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 12, lineHeight: 1.5 }}>
           En EmailJS, crea un template con las variables: <code style={{ color: 'var(--accent)' }}>{'{{to_email}}'}</code>, <code style={{ color: 'var(--accent)' }}>{'{{fighter_name}}'}</code>, <code style={{ color: 'var(--accent)' }}>{'{{changes}}'}</code>, <code style={{ color: 'var(--accent)' }}>{'{{time}}'}</code>
         </p>
       </div>
