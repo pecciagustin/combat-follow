@@ -5,6 +5,7 @@ import FighterCard from './components/FighterCard'
 import ChangeLog from './components/ChangeLog'
 import { scrapeAllFighters } from './api/scrape'
 import { sendChangeAlert, sendLiveAlert } from './api/email'
+import QRModal from './components/QRModal'
 
 const STORAGE_KEY = 'combat-follow-fighters'
 const EMAIL_CONFIG_KEY = 'combat-follow-email'
@@ -59,6 +60,7 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState(null)
   const [intervalSec, setIntervalSec] = useState(120)
   const [emailConfig, setEmailConfig] = useState(loadEmailConfig)
+  const [showQR, setShowQR] = useState(false)
   const intervalRef = useRef(null)
   const prevMatchRef = useRef({})
 
@@ -142,7 +144,25 @@ export default function App() {
     return () => clearInterval(intervalRef.current)
   }, [refresh, intervalSec, fighters.length])
 
+  // On load: check for ?import= param and merge fighters from QR
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const importParam = params.get('import')
+    if (importParam) {
+      try {
+        const imported = JSON.parse(atob(importParam))
+        if (Array.isArray(imported)) {
+          const newFighters = imported.map((f) => ({ ...f, id: crypto.randomUUID() }))
+          setFighters((prev) => {
+            const existingUrls = new Set(prev.map((f) => f.bracketUrl))
+            const toAdd = newFighters.filter((f) => !existingUrls.has(f.bracketUrl))
+            return [...prev, ...toAdd]
+          })
+        }
+      } catch { /* ignore bad param */ }
+      // Clean the URL without reloading
+      window.history.replaceState({}, '', window.location.pathname)
+    }
     if (fighters.length > 0) refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -217,6 +237,7 @@ export default function App() {
             setEmailConfig(cfg)
             localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(cfg))
           }}
+          onShowQR={() => setShowQR(true)}
         />
       )}
 
@@ -270,6 +291,10 @@ export default function App() {
 
           <ChangeLog entries={changelog} />
         </div>
+      )}
+
+      {showQR && (
+        <QRModal fighters={fighters} onClose={() => setShowQR(false)} />
       )}
     </>
   )

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig }) {
+export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR }) {
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
   const [editingId, setEditingId] = useState(null)
@@ -78,8 +78,13 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
       </form>
 
       <div>
-        <div className="fighter-list-header">
-          Luchadores ({fighters.length})
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <div className="fighter-list-header">Luchadores ({fighters.length})</div>
+          {fighters.length > 0 && (
+            <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={onShowQR}>
+              📱 Generar QR
+            </button>
+          )}
         </div>
         <div style={{ marginTop: 8 }}>
           {fighters.length === 0 ? (

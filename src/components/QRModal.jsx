@@ -1,0 +1,35 @@
+import { QRCodeSVG } from 'qrcode.react'
+
+export default function QRModal({ fighters, onClose }) {
+  const encoded = btoa(JSON.stringify(
+    fighters.map(({ name, bracketUrl }) => ({ name, bracketUrl }))
+  ))
+  const url = `${window.location.origin}${window.location.pathname}?import=${encoded}`
+
+  return (
+    <div className="qr-overlay" onClick={onClose}>
+      <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="qr-header">
+          <div className="qr-title">Escanear desde el móvil</div>
+          <button className="qr-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="qr-body">
+          <QRCodeSVG
+            value={url}
+            size={220}
+            bgColor="#ffffff"
+            fgColor="#0f0f0f"
+            level="M"
+          />
+        </div>
+        <p className="qr-hint">
+          Abre la cámara del iPhone y apunta al QR.<br />
+          Se abrirá la app con todos los luchadores cargados.
+        </p>
+        <p className="qr-fighters">
+          {fighters.length} luchador{fighters.length !== 1 ? 'es' : ''}: {fighters.map(f => f.name).join(', ')}
+        </p>
+      </div>
+    </div>
+  )
+}
