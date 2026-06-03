@@ -501,6 +501,69 @@ button:active {
 
 .card-mat span { color: var(--text); }
 
+/* ─── Compact card row ───────────────────────────────── */
+.card-compact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.card-compact-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-compact-center {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.card-time-compact {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.card-time-compact.muted {
+  color: var(--text-secondary);
+  font-size: 18px;
+}
+
+.card-mat-compact {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.card-mat-compact strong {
+  color: var(--text);
+}
+
+.card-compact-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.card-chevron {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.card-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .card-placement {
   font-size: 13px;
   font-weight: 600;

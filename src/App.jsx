@@ -202,6 +202,16 @@ export default function App() {
   const isMonitoring = fighters.length > 0
   const showSlowNotice = fighters.length >= 6
 
+  // Sort fighters by next match time (earliest first, no-time goes to bottom)
+  const sortedFighters = [...fighters].sort((a, b) => {
+    const tA = matchMap[a.id]?.time
+    const tB = matchMap[b.id]?.time
+    if (tA && tB) return tA.localeCompare(tB)
+    if (tA) return -1
+    if (tB) return 1
+    return 0
+  })
+
   return (
     <>
       <Header
@@ -275,7 +285,7 @@ export default function App() {
           ) : (
             <div className="cards-scroll">
               <div className={`cards-grid ${gridClass(fighters.length)}`}>
-                {fighters.map((fighter) => (
+                {sortedFighters.map((fighter) => (
                   <FighterCard
                     key={fighter.id}
                     fighter={fighter}
