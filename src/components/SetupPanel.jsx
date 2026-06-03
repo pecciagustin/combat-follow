@@ -63,11 +63,11 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
           />
         </div>
         <div className="form-group">
-          <label htmlFor="fighter-url">Bracket URL (Smoothcomp)</label>
+          <label htmlFor="fighter-url">Bracket URL</label>
           <input
             id="fighter-url"
             type="url"
-            placeholder="https://dbjj.smoothcomp.com/en/event/..."
+            placeholder="https://smoothcomp.com/... o bjjcompsystem.com/..."
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             autoComplete="off"
