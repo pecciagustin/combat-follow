@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function SetupPanel({ fighters, onAdd, onRemove, onEdit }) {
+export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig }) {
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
   const [editingId, setEditingId] = useState(null)
@@ -155,6 +155,36 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit }) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* EmailJS config */}
+      <div className="add-fighter-form" style={{ marginTop: 24 }}>
+        <h2>Notificaciones por Email</h2>
+        <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
+          Crea una cuenta gratis en <strong style={{ color: 'var(--text)' }}>emailjs.com</strong> y pega tus credenciales aquí para recibir emails cuando haya cambios de horario o un luchador entre en pelea.
+        </p>
+        {[
+          { key: 'toEmail', label: 'Tu email', placeholder: 'tu@gmail.com', type: 'email' },
+          { key: 'serviceId', label: 'Service ID', placeholder: 'service_xxxxxxx', type: 'text' },
+          { key: 'templateId', label: 'Template ID', placeholder: 'template_xxxxxxx', type: 'text' },
+          { key: 'publicKey', label: 'Public Key', placeholder: 'xxxxxxxxxxxxxx', type: 'text' },
+        ].map(({ key, label, placeholder, type }) => (
+          <div className="form-group" key={key}>
+            <label>{label}</label>
+            <input
+              type={type}
+              placeholder={placeholder}
+              value={emailConfig[key] || ''}
+              onChange={(e) => onEmailConfig({ ...emailConfig, [key]: e.target.value })}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+            />
+          </div>
+        ))}
+        <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
+          En EmailJS, crea un template con las variables: <code style={{ color: 'var(--accent)' }}>{'{{to_email}}'}</code>, <code style={{ color: 'var(--accent)' }}>{'{{fighter_name}}'}</code>, <code style={{ color: 'var(--accent)' }}>{'{{changes}}'}</code>, <code style={{ color: 'var(--accent)' }}>{'{{time}}'}</code>
+        </p>
       </div>
     </div>
   )

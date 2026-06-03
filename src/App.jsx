@@ -4,8 +4,19 @@ import SetupPanel from './components/SetupPanel'
 import FighterCard from './components/FighterCard'
 import ChangeLog from './components/ChangeLog'
 import { scrapeAllFighters } from './api/scrape'
+import { sendChangeAlert, sendLiveAlert } from './api/email'
 
 const STORAGE_KEY = 'combat-follow-fighters'
+const EMAIL_CONFIG_KEY = 'combat-follow-email'
+
+function loadEmailConfig() {
+  try {
+    const raw = localStorage.getItem(EMAIL_CONFIG_KEY)
+    return raw ? JSON.parse(raw) : { serviceId: '', templateId: '', publicKey: '', toEmail: '' }
+  } catch {
+    return { serviceId: '', templateId: '', publicKey: '', toEmail: '' }
+  }
+}
 const INTERVALS = [
   { label: '1 min', value: 60 },
   { label: '2 min', value: 120 },
@@ -47,6 +58,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [intervalSec, setIntervalSec] = useState(120)
+  const [emailConfig, setEmailConfig] = useState(loadEmailConfig)
   const intervalRef = useRef(null)
   const prevMatchRef = useRef({})
 
@@ -94,14 +106,26 @@ export default function App() {
         setChangedIds((prev) => new Set([...prev, ...newChangedIds]))
         setChangelog((prev) => [...prev, ...newEntries])
         vibrate('change')
+        // Group entries by fighter and send one email per fighter
+        const byFighter = {}
+        newEntries.forEach((e) => {
+          if (!byFighter[e.fighter]) byFighter[e.fighter] = []
+          byFighter[e.fighter].push(e)
+        })
+        Object.entries(byFighter).forEach(([name, changes]) => {
+          sendChangeAlert({ config: emailConfig, fighter: name, changes })
+        })
       }
 
-      // Vibrate when any fighter goes live
-      const wentLive = results.some(({ id, data }) => {
+      // Vibrate + email when any fighter goes live
+      results.forEach(({ id, data }) => {
         const old = prevMatchRef.current[id]
-        return data?.status === 'live' && old?.status !== 'live'
+        if (data?.status === 'live' && old?.status !== 'live') {
+          vibrate('live')
+          const fighter = fighters.find((f) => f.id === id)
+          sendLiveAlert({ config: emailConfig, fighter: fighter?.name || id, matchData: data })
+        }
       })
-      if (wentLive) vibrate('live')
 
       setLastUpdated(now)
     } catch (err) {
@@ -183,7 +207,17 @@ export default function App() {
       </nav>
 
       {tab === 'setup' && (
-        <SetupPanel fighters={fighters} onAdd={addFighter} onRemove={removeFighter} onEdit={editFighter} />
+        <SetupPanel
+          fighters={fighters}
+          onAdd={addFighter}
+          onRemove={removeFighter}
+          onEdit={editFighter}
+          emailConfig={emailConfig}
+          onEmailConfig={(cfg) => {
+            setEmailConfig(cfg)
+            localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(cfg))
+          }}
+        />
       )}
 
       {tab === 'panel' && (
