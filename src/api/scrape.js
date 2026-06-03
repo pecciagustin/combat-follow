@@ -275,10 +275,21 @@ function parseBjjCompSystemHtml(html, fighterName) {
   const categoryMatch = html.match(/tournament-category__title[^>]*>([^<]+)</)
   const category = categoryMatch ? categoryMatch[1].trim() : null
 
-  // Placement from results
+  // Placement from podium section: podium__gold/silver/bronze followed by competitor name
   let placement = null
-  const rankMatch = html.match(new RegExp(`ranking.*?<td[^>]*>(\\d+)</td>.*?${escapeRegex(fighterName)}`, 'is'))
-  if (rankMatch) placement = parseInt(rankMatch[1])
+  const podiumMap = { gold: 1, silver: 2, bronze: 3 }
+  const podiumMatch = html.match(/podium__(gold|silver|bronze)[^]*?podium__competitor-name[^>]*>([^<]+)</i)
+  if (podiumMatch) {
+    // Find all podium entries and match against fighter name
+    const podiumRe = /podium__(gold|silver|bronze)[^]*?podium__competitor-name[^>]*>([^<]+)</gi
+    let pm
+    while ((pm = podiumRe.exec(html)) !== null) {
+      if (pm[2].trim().toLowerCase().includes(nameLower)) {
+        placement = podiumMap[pm[1].toLowerCase()] || null
+        break
+      }
+    }
+  }
 
   const status = placement !== null ? 'finished' : 'upcoming'
 
