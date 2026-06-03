@@ -197,11 +197,128 @@ function parseBjjCompSystem(text, fighterName) {
   return { athlete: fighterName, opponent: opponent || 'TBD', category, time, mat, fight, placement, status, fights, round: fights[fights.length - 1]?.roundName }
 }
 
+async function fetchHtml(url) {
+  const res = await fetch(JINA_BASE + url, {
+    headers: { 'X-Return-Format': 'html' },
+  })
+  if (!res.ok) throw new Error(`Jina fetch failed: ${res.status}`)
+  return res.text()
+}
+
+function parseBjjCompSystemHtml(html, fighterName) {
+  const nameLower = fighterName.toLowerCase()
+
+  // Extract all match blocks from HTML
+  // Each block has: FIGHT XX, Mat Y, time, competitor names
+  const matchBlocks = []
+
+  // Find all fight headers
+  const fightPattern = /FIGHT\s+(\d+)[^<]*<\/span>\s*Mat\s+(\d+)/g
+  const timePattern = /bracket-match-header__when[^>]*>([^<]+)</g
+  const namePattern = /match-card__competitor-name[^>]*>([^<]+)</g
+
+  // Parse by splitting on fight headers
+  const fightSections = html.split(/(?=FIGHT\s+\d+)/)
+
+  for (const section of fightSections) {
+    const fightMatch = section.match(/FIGHT\s+(\d+)[^>]*>?\s*Mat\s+(\d+)/)
+    if (!fightMatch) continue
+
+    const fightNum = fightMatch[1]
+    const matNum = fightMatch[2]
+
+    // Extract time
+    const timeMatch = section.match(/bracket-match-header__when[^>]*>([^<]+)</)
+    let time = null
+    if (timeMatch) {
+      // "Fri 05/29 at 04:27 PM" → "16:27"
+      const t = timeMatch[1].match(/at\s+(\d+):(\d+)\s*(AM|PM)/i)
+      if (t) {
+        let h = parseInt(t[1])
+        const m = t[2]
+        const period = t[3].toUpperCase()
+        if (period === 'PM' && h !== 12) h += 12
+        if (period === 'AM' && h === 12) h = 0
+        time = `${String(h).padStart(2, '0')}:${m}`
+      }
+    }
+
+    // Extract competitor names
+    const names = []
+    const nameRe = /match-card__competitor-name[^>]*>([^<]+)</g
+    let nm
+    while ((nm = nameRe.exec(section)) !== null) {
+      const n = nm[1].trim()
+      if (n && !names.includes(n)) names.push(n)
+    }
+
+    if (names.some(n => n.toLowerCase().includes(nameLower))) {
+      matchBlocks.push({ fightNum, matNum, time, names })
+    }
+  }
+
+  if (matchBlocks.length === 0) {
+    // Fallback to text parser
+    return null
+  }
+
+  // Sort by fight number (ascending = chronological order in bracket)
+  matchBlocks.sort((a, b) => parseInt(a.fightNum) - parseInt(b.fightNum))
+
+  // Last block = most advanced/final match
+  const lastBlock = matchBlocks[matchBlocks.length - 1]
+  const opponent = lastBlock.names.find(n => !n.toLowerCase().includes(nameLower)) || 'TBD'
+
+  // Category from text portion
+  const categoryMatch = html.match(/tournament-category__title[^>]*>([^<]+)</)
+  const category = categoryMatch ? categoryMatch[1].trim() : null
+
+  // Placement from results
+  let placement = null
+  const rankMatch = html.match(new RegExp(`ranking.*?<td[^>]*>(\\d+)</td>.*?${escapeRegex(fighterName)}`, 'is'))
+  if (rankMatch) placement = parseInt(rankMatch[1])
+
+  const status = placement !== null ? 'finished' : 'upcoming'
+
+  const roundNames = ['Primera ronda', 'Cuartos', 'Semifinal', 'Final']
+  const fights = matchBlocks.map((b, i) => {
+    const opp = b.names.find(n => !n.toLowerCase().includes(nameLower)) || 'TBD'
+    const roundIdx = matchBlocks.length <= 4 ? i + (4 - matchBlocks.length) : i
+    return {
+      opponent: opp,
+      matchRef: `Fight ${b.fightNum}`,
+      mat: b.matNum,
+      fight: b.fightNum,
+      time: b.time,
+      roundName: roundNames[roundIdx] || `Ronda ${i + 1}`,
+      result: null,
+    }
+  })
+
+  return {
+    athlete: fighterName,
+    opponent,
+    category,
+    time: lastBlock.time,
+    mat: lastBlock.matNum,
+    fight: lastBlock.fightNum,
+    round: fights[fights.length - 1]?.roundName,
+    placement,
+    status,
+    fights,
+  }
+}
+
 async function scrapeOneFighter(fighter) {
-  const text = await fetchPageText(fighter.bracketUrl)
   if (fighter.bracketUrl.includes('bjjcompsystem.com')) {
+    const html = await fetchHtml(fighter.bracketUrl)
+    const result = parseBjjCompSystemHtml(html, fighter.name)
+    if (result) return result
+    // Fallback to text parser
+    const text = await fetchPageText(fighter.bracketUrl)
     return parseBjjCompSystem(text, fighter.name)
   }
+  const text = await fetchPageText(fighter.bracketUrl)
   return parseMatchData(text, fighter.name)
 }
 
