@@ -109,6 +109,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  function editFighter(id, updates) {
+    setFighters((prev) => prev.map((f) => f.id === id ? { ...f, ...updates } : f))
+  }
+
   function addFighter(fighter) {
     const newFighter = { ...fighter, id: crypto.randomUUID() }
     setFighters((prev) => [...prev, newFighter])
@@ -161,7 +165,7 @@ export default function App() {
       </nav>
 
       {tab === 'setup' && (
-        <SetupPanel fighters={fighters} onAdd={addFighter} onRemove={removeFighter} />
+        <SetupPanel fighters={fighters} onAdd={addFighter} onRemove={removeFighter} onEdit={editFighter} />
       )}
 
       {tab === 'panel' && (
