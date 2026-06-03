@@ -500,6 +500,83 @@ button:active {
 
 .card-mat span { color: var(--text); }
 
+.card-placement {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--changed);
+  margin-bottom: 6px;
+}
+
+.card-round {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.card-tree {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.card-tree-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0;
+  min-height: unset;
+  height: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.card-tree-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-tree-row {
+  font-size: 12px;
+}
+
+.card-tree-round {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 1px;
+}
+
+.card-tree-detail {
+  color: var(--text);
+}
+
+.card-tree-ref {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.card-tree-opponent {
+  font-weight: 600;
+}
+
+.card-tree-result {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--changed);
+  font-weight: 600;
+}
+
 .card-note {
   width: 100%;
   margin-top: 10px;
