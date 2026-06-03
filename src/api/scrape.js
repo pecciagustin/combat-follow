@@ -130,8 +130,78 @@ function findOpponent(windowLines, fighterName) {
   return null
 }
 
+// ── BJJ Comp System parser ────────────────────────────
+function parseBjjCompSystem(text, fighterName) {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+  const nameLower = fighterName.toLowerCase()
+
+  // Category: first non-empty line
+  const category = lines[0] || null
+
+  // Find fighter
+  const fighterIdx = lines.findIndex((l) => l.toLowerCase().includes(nameLower))
+  if (fighterIdx === -1) return { status: 'notfound' }
+
+  // Time + mat from "FIGHT 53: Mat 3" or "Fight 53 - Mat 3" patterns near fighter
+  let mat = null, fight = null, time = null
+  const nearLines = lines.slice(Math.max(0, fighterIdx - 15), fighterIdx + 15)
+  const nearText = nearLines.join(' ')
+
+  const fightMatMatch = nearText.match(/fight\s+(\d+)[:\s-]+mat\s+(\d+)/i)
+  if (fightMatMatch) { fight = fightMatMatch[1]; mat = fightMatMatch[2] }
+
+  const timeMatch = nearText.match(/\b([6-9]:\d{2}|[01]\d:\d{2}|2[0-3]:\d{2})\b/)
+  if (timeMatch) time = timeMatch[1]
+
+  // Opponent: find the other fighter in the same match block
+  // BJJ Comp System separates match pairs with "* * *"
+  // Find the block around the fighter between two "* * *" separators
+  const sepIdxs = [-1, ...lines.reduce((a, l, i) => (l === '* * *' ? [...a, i] : a), []), lines.length]
+  let blockStart = 0, blockEnd = lines.length
+  for (let i = 0; i < sepIdxs.length - 1; i++) {
+    if (sepIdxs[i] < fighterIdx && sepIdxs[i + 1] > fighterIdx) {
+      blockStart = sepIdxs[i] + 1
+      blockEnd = sepIdxs[i + 1]
+      break
+    }
+  }
+  const blockLines = lines.slice(blockStart, blockEnd)
+  const opponent = findOpponent(blockLines, fighterName)
+
+  // Placement from ranking table: "| 1 Daniel..." or "1\nFighterName"
+  let placement = null
+  const rankMatch = text.match(new RegExp(`\\|\\s*(\\d+)\\s+${escapeRegex(fighterName)}`, 'i'))
+  if (rankMatch) placement = parseInt(rankMatch[1])
+
+  // Status
+  let status = 'upcoming'
+  if (placement !== null) status = 'finished'
+
+  // All fights for this fighter (find all blocks containing them)
+  const fights = []
+  const seenBlocks = new Set()
+  lines.forEach((l, i) => {
+    if (!l.toLowerCase().includes(nameLower)) return
+    for (let s = 0; s < sepIdxs.length - 1; s++) {
+      if (sepIdxs[s] < i && sepIdxs[s + 1] > i) {
+        const key = `${sepIdxs[s]}-${sepIdxs[s + 1]}`
+        if (seenBlocks.has(key)) return
+        seenBlocks.add(key)
+        const bl = lines.slice(sepIdxs[s] + 1, sepIdxs[s + 1])
+        const opp = findOpponent(bl, fighterName)
+        if (opp) fights.push({ opponent: opp, matchRef: null, mat: null, fight: null, roundName: null, result: null })
+      }
+    }
+  })
+
+  return { athlete: fighterName, opponent: opponent || 'TBD', category, time, mat, fight, placement, status, fights }
+}
+
 async function scrapeOneFighter(fighter) {
   const text = await fetchPageText(fighter.bracketUrl)
+  if (fighter.bracketUrl.includes('bjjcompsystem.com')) {
+    return parseBjjCompSystem(text, fighter.name)
+  }
   return parseMatchData(text, fighter.name)
 }
 
