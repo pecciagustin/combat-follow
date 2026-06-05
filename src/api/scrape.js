@@ -337,7 +337,7 @@ async function scrapeOneFighter(fighter) {
   // Always try to get the scheduled time from the matchlist search URL
   if (data && data.status !== 'notfound' && data.status !== 'error') {
     try {
-      const matchlistTime = await fetchMatchlistTime(fighter.bracketUrl, fighter.name)
+      const matchlistTime = await fetchMatchlistTime(fighter.bracketUrl, fighter.name, fighter.matchlistUrl)
       if (matchlistTime) data.time = matchlistTime
     } catch { /* ignore — time stays empty */ }
   }
@@ -355,8 +355,8 @@ function buildMatchlistUrl(bracketUrl, fighterName) {
   return `${base}/schedule/matchlist?search=${searchName}&club=&catid=0&mat=&country=`
 }
 
-async function fetchMatchlistTime(bracketUrl, fighterName) {
-  const url = buildMatchlistUrl(bracketUrl, fighterName)
+async function fetchMatchlistTime(bracketUrl, fighterName, manualMatchlistUrl) {
+  const url = manualMatchlistUrl || buildMatchlistUrl(bracketUrl, fighterName)
   if (!url) return null
   const text = await fetchPageText(url)
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)

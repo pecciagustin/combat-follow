@@ -3,6 +3,7 @@ import { useState } from 'react'
 export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner }) {
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
+  const [matchlistUrl, setMatchlistUrl] = useState('')
   const [emailDraft, setEmailDraft] = useState(emailConfig)
   const [emailSaved, setEmailSaved] = useState(false)
 
@@ -14,34 +15,38 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
   const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
   const [editUrl, setEditUrl] = useState('')
+  const [editMatchlistUrl, setEditMatchlistUrl] = useState('')
 
   function handleSubmit(e) {
     e.preventDefault()
     const trimName = name.trim()
     const trimUrl = url.trim()
     if (!trimName || !trimUrl) return
-    onAdd({ name: trimName, bracketUrl: trimUrl })
+    onAdd({ name: trimName, bracketUrl: trimUrl, matchlistUrl: matchlistUrl.trim() || null })
     setName('')
     setUrl('')
+    setMatchlistUrl('')
   }
 
   function startEdit(f) {
     setEditingId(f.id)
     setEditName(f.name)
     setEditUrl(f.bracketUrl)
+    setEditMatchlistUrl(f.matchlistUrl || '')
   }
 
   function cancelEdit() {
     setEditingId(null)
     setEditName('')
     setEditUrl('')
+    setEditMatchlistUrl('')
   }
 
   function handleEditSave(id) {
     const trimName = editName.trim()
     const trimUrl = editUrl.trim()
     if (!trimName || !trimUrl) return
-    onEdit(id, { name: trimName, bracketUrl: trimUrl })
+    onEdit(id, { name: trimName, bracketUrl: trimUrl, matchlistUrl: editMatchlistUrl.trim() || null })
     cancelEdit()
   }
 
@@ -70,6 +75,19 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
             placeholder="https://smoothcomp.com/... o bjjcompsystem.com/..."
             value={url}
             onChange={(e) => setUrl(e.target.value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+          />
+        </div>
+        <div className="form-group">
+          <label htmlFor="fighter-matchlist">Matchlist URL <span style={{ color: 'var(--text-secondary)', fontWeight: 400, textTransform: 'none' }}>(opcional)</span></label>
+          <input
+            id="fighter-matchlist"
+            type="url"
+            placeholder="https://.../schedule/matchlist?search=nombre"
+            value={matchlistUrl}
+            onChange={(e) => setMatchlistUrl(e.target.value)}
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
@@ -127,6 +145,18 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
                           type="url"
                           value={editUrl}
                           onChange={(e) => setEditUrl(e.target.value)}
+                          autoComplete="off"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 8 }}>
+                        <label>Matchlist URL <span style={{ color: 'var(--text-secondary)', fontWeight: 400, textTransform: 'none' }}>(opcional)</span></label>
+                        <input
+                          type="url"
+                          value={editMatchlistUrl}
+                          onChange={(e) => setEditMatchlistUrl(e.target.value)}
+                          placeholder="https://.../schedule/matchlist?search=nombre"
                           autoComplete="off"
                           autoCorrect="off"
                           autoCapitalize="off"
