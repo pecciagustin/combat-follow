@@ -34,9 +34,11 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged, 
         <div className="card-compact-left">
           <div className="card-name">
             {fighter.name}
-            {matchData?.category && (
+            {(fighter.discipline || matchData?.category) && (
               <span className="card-name-type">
-                {/no.?gi/i.test(matchData.category) ? ' (No-Gi)' : /\bgi\b/i.test(matchData.category) ? ' (Gi)' : ''}
+                {fighter.discipline === 'nogi' ? ' (No-Gi)'
+                  : fighter.discipline === 'gi' ? ' (Gi)'
+                  : matchData?.category && (/no.?gi/i.test(matchData.category) ? ' (No-Gi)' : /\bgi\b/i.test(matchData.category) ? ' (Gi)' : '')}
               </span>
             )}
           </div>

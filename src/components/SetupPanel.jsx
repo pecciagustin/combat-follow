@@ -3,12 +3,14 @@ import { useState } from 'react'
 export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner }) {
   const [name, setName] = useState('')
   const [matchlistUrl, setMatchlistUrl] = useState('')
+  const [discipline, setDiscipline] = useState('')
   const [emailDraft, setEmailDraft] = useState(emailConfig)
   const [emailSaved, setEmailSaved] = useState(false)
 
   const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
   const [editMatchlistUrl, setEditMatchlistUrl] = useState('')
+  const [editDiscipline, setEditDiscipline] = useState('')
 
   function handleEmailSave() {
     onEmailConfig(emailDraft)
@@ -21,28 +23,31 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
     const trimName = name.trim()
     const trimUrl = matchlistUrl.trim()
     if (!trimName || !trimUrl) return
-    onAdd({ name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl })
+    onAdd({ name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl, discipline: discipline || null })
     setName('')
     setMatchlistUrl('')
+    setDiscipline('')
   }
 
   function startEdit(f) {
     setEditingId(f.id)
     setEditName(f.name)
     setEditMatchlistUrl(f.matchlistUrl || f.bracketUrl || '')
+    setEditDiscipline(f.discipline || '')
   }
 
   function cancelEdit() {
     setEditingId(null)
     setEditName('')
     setEditMatchlistUrl('')
+    setEditDiscipline('')
   }
 
   function handleEditSave(id) {
     const trimName = editName.trim()
     const trimUrl = editMatchlistUrl.trim()
     if (!trimName || !trimUrl) return
-    onEdit(id, { name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl })
+    onEdit(id, { name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl, discipline: editDiscipline || null })
     cancelEdit()
   }
 
@@ -75,6 +80,18 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
             autoCorrect="off"
             autoCapitalize="off"
           />
+        </div>
+        <div className="form-group">
+          <label>Disciplina <span style={{ color: 'var(--text-secondary)', fontWeight: 400, textTransform: 'none' }}>(si pelea en las dos)</span></label>
+          <select
+            value={discipline}
+            onChange={(e) => setDiscipline(e.target.value)}
+            style={{ width: '100%', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontFamily: 'inherit', fontSize: 15, padding: '12px 14px', minHeight: 44, outline: 'none' }}
+          >
+            <option value="">— Cualquiera —</option>
+            <option value="gi">GI</option>
+            <option value="nogi">No-Gi</option>
+          </select>
         </div>
         <button
           type="submit"
@@ -134,6 +151,18 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
                           autoCapitalize="off"
                         />
                       </div>
+                      <div className="form-group" style={{ marginBottom: 8 }}>
+                        <label>Disciplina</label>
+                        <select
+                          value={editDiscipline}
+                          onChange={(e) => setEditDiscipline(e.target.value)}
+                          style={{ width: '100%', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontFamily: 'inherit', fontSize: 15, padding: '10px 14px', minHeight: 44, outline: 'none' }}
+                        >
+                          <option value="">— Cualquiera —</option>
+                          <option value="gi">GI</option>
+                          <option value="nogi">No-Gi</option>
+                        </select>
+                      </div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button
                           className="btn-primary"
@@ -151,7 +180,10 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div className="fighter-item-info">
-                        <div className="fighter-item-name">{f.name}</div>
+                        <div className="fighter-item-name">
+                          {f.name}
+                          {f.discipline && <span style={{ color: 'var(--text-secondary)', fontWeight: 400, fontSize: 11, marginLeft: 6 }}>({f.discipline === 'gi' ? 'GI' : 'No-Gi'})</span>}
+                        </div>
                         <div className="fighter-item-url">{f.matchlistUrl || f.bracketUrl}</div>
                       </div>
                       <button className="btn-ghost" onClick={() => startEdit(f)} aria-label={`Editar ${f.name}`}>✎</button>

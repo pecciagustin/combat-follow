@@ -479,7 +479,9 @@ export async function scrapeAllFighters(fighters) {
         const matchlistUrl = fighter.matchlistUrl || buildMatchlistSearchUrl(fighter.bracketUrl, fighter.name, null)
         if (matchlistUrl) {
           const text = await fetchPageText(matchlistUrl)
-          const matchlistData = extractTimeFromMatchlistText(text, fighter.name, data.category)
+          // Use fighter.discipline (gi/nogi) to disambiguate multi-category fighters
+          const category = fighter.discipline === 'nogi' ? 'No-Gi' : fighter.discipline === 'gi' ? 'GI' : (data.category || null)
+          const matchlistData = extractTimeFromMatchlistText(text, fighter.name, category)
           if (matchlistData && typeof matchlistData === 'object') {
             // Merge matchlist data — override bracket data with fresher matchlist data
             if (matchlistData.time) data.time = matchlistData.time
