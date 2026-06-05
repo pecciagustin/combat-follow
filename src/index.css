@@ -531,6 +531,7 @@ button:active {
 .card-compact-center {
   text-align: right;
   flex-shrink: 0;
+  max-width: 55%;
 }
 
 .card-time-compact {
@@ -563,6 +564,7 @@ button:active {
   align-items: flex-end;
   gap: 4px;
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .card-chevron {

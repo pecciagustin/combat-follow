@@ -65,7 +65,7 @@ function parseMatchlistHtml(html, fighterName, discipline) {
     mat:      nearNum ? nearNum.ref.split('-')[0] : null,
     fight:    nearNum ? nearNum.ref.split('-')[1] : null,
     opponent: opponent?.name || null,
-    category: nearCat?.cat?.replace(/\s*\(Day \d+\)/i, '').trim() || null,
+    category: nearCat?.cat?.replace(/\s*\(Day \d+\)/i, '').replace(/&#039;/g, "'").replace(/&amp;/g, '&').trim() || null,
   }
 }
 

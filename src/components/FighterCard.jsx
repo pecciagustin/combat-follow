@@ -58,7 +58,9 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged, 
                 </div>
               )}
               {matchData.category && (
-                <div className="card-mat-compact" style={{ opacity: 0.6 }}>{matchData.category}</div>
+                <div className="card-mat-compact" style={{ opacity: 0.6, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {matchData.category.replace(/Men's|Women's|Youth Men's|Youth Women's/i, '').trim()}
+                </div>
               )}
             </>
           ) : (
