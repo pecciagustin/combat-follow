@@ -354,7 +354,59 @@ function buildMatchlistBaseUrl(bracketUrl) {
   return m ? `${m[1]}/schedule/matchlist?search=&club=&catid=0&mat=&country=` : null
 }
 
-function extractTimeFromMatchlistText(lines, fighterName, bracketCategory) {
+function parseMatchlistHtml(html, fighterName, bracketCategory) {
+  const nameLower = fighterName.toLowerCase()
+
+  // Parse match-row blocks from the raw HTML
+  // Structure: <div class="match-row ...">
+  //   <div class="number">4-42</div>
+  //   <div class="eta ...">13:38</div>
+  //   <span class="participant ...">Fighter Name ...</span>
+  const matchRowRegex = /<div[^>]*class="[^"]*match-row[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*class="[^"]*match-row|<\/div>\s*<\/div>\s*<\/div>\s*$)/gi
+  const rows = []
+  let m
+  while ((m = matchRowRegex.exec(html)) !== null) {
+    rows.push(m[1])
+  }
+
+  // Find rows containing the fighter name
+  const matchingRows = rows.filter(r => r.toLowerCase().includes(nameLower))
+  if (!matchingRows.length) {
+    // Fallback: search in full HTML around fighter name
+    const idx = html.toLowerCase().indexOf(nameLower)
+    if (idx === -1) return null
+    const chunk = html.slice(Math.max(0, idx - 1000), idx + 200)
+    const timeMatch = chunk.match(/class="eta[^"]*">(\d{1,2}:\d{2})</)
+    return timeMatch ? timeMatch[1] : null
+  }
+
+  // If multiple rows (fighter in multiple categories), pick best match
+  let bestRow = matchingRows[0]
+  if (matchingRows.length > 1 && bracketCategory) {
+    const catLower = bracketCategory.toLowerCase()
+    const isNoGi = /no.?gi/i.test(catLower)
+    const isGi = /\bgi\b/.test(catLower) && !isNoGi
+    for (const row of matchingRows) {
+      // Look at the category-row above this match-row
+      const rowIdx = html.indexOf(row)
+      const before = html.slice(Math.max(0, rowIdx - 500), rowIdx).toLowerCase()
+      if (isNoGi && /no.?gi/i.test(before)) { bestRow = row; break }
+      if (isGi && /\bgi\b/.test(before) && !/no.?gi/i.test(before)) { bestRow = row; break }
+    }
+  }
+
+  const timeMatch = bestRow.match(/class="eta[^"]*">(\d{1,2}:\d{2})</)
+  return timeMatch ? timeMatch[1] : null
+}
+
+function extractTimeFromMatchlistText(text, fighterName, bracketCategory) {
+  // Detect if it's raw HTML or Jina markdown text
+  if (text.includes('<div') && text.includes('match-row')) {
+    return parseMatchlistHtml(text, fighterName, bracketCategory)
+  }
+
+  // Fallback: Jina markdown text parsing
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const nameLower = fighterName.toLowerCase()
   const contentStart = lines.findIndex(l => l.startsWith('Markdown Content'))
   const searchFrom = contentStart >= 0 ? contentStart : 0
@@ -364,7 +416,6 @@ function extractTimeFromMatchlistText(lines, fighterName, bracketCategory) {
       acc.push(i)
     return acc
   }, [])
-
   if (allIdxs.length === 0) return null
 
   let bestIdx = allIdxs[0]
