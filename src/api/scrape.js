@@ -483,14 +483,15 @@ export async function scrapeAllFighters(fighters) {
           const category = fighter.discipline === 'nogi' ? 'No-Gi' : fighter.discipline === 'gi' ? 'GI' : (data.category || null)
           const matchlistData = extractTimeFromMatchlistText(text, fighter.name, category)
           if (matchlistData && typeof matchlistData === 'object') {
-            // Merge matchlist data — override bracket data with fresher matchlist data
             if (matchlistData.time) data.time = matchlistData.time
             if (matchlistData.mat) data.mat = matchlistData.mat
             if (matchlistData.fight) data.fight = matchlistData.fight
             if (matchlistData.opponent && !data.opponent) data.opponent = matchlistData.opponent
-            if (data.status === 'upcoming' || !data.status) data.status = 'upcoming'
+            // If we got any data from matchlist, fighter is valid — override notfound
+            if (matchlistData.time || matchlistData.mat) data.status = 'upcoming'
           } else if (typeof matchlistData === 'string') {
             data.time = matchlistData
+            data.status = 'upcoming'
           }
         }
       } catch { /* matchlist unavailable, use bracket data only */ }
