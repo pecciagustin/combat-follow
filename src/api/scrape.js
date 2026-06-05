@@ -360,55 +360,47 @@ function buildMatchlistBaseUrl(bracketUrl) {
 function parseMatchlistHtml(html, fighterName, bracketCategory) {
   const nameLower = fighterName.toLowerCase()
 
-  // Parse match-row blocks from the raw HTML
-  // Structure: <div class="match-row ...">
-  //   <div class="number">4-42</div>
-  //   <div class="eta ...">13:38</div>
-  //   <span class="participant ...">Fighter Name ...</span>
-  const matchRowRegex = /<div[^>]*class="[^"]*match-row[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*class="[^"]*match-row|<\/div>\s*<\/div>\s*<\/div>\s*$)/gi
-  const rows = []
-  let m
-  while ((m = matchRowRegex.exec(html)) !== null) {
-    rows.push(m[1])
-  }
+  // Extract all match data points by position in the HTML
+  const numbers = [...html.matchAll(/<div class="number">([^<]+)<\/div>/g)]
+    .map(m => ({ pos: m.index, ref: m[1].trim() }))
+  const etas = [...html.matchAll(/class="eta[^"]*">(\d{1,2}:\d{2})<\/div>/g)]
+    .map(m => ({ pos: m.index, time: m[1] }))
+  const participants = [...html.matchAll(/class="participant[^"]*">\s*([^\n<]+)/g)]
+    .map(m => ({ pos: m.index, name: m[1].trim() }))
+  const categories = [...html.matchAll(/class="category-row">\s*([^\n<]+)/g)]
+    .map(m => ({ pos: m.index, cat: m[1].trim() }))
 
-  // Find rows containing the fighter name
-  const matchingRows = rows.filter(r => r.toLowerCase().includes(nameLower))
-  if (!matchingRows.length) {
-    // Fallback: search in full HTML around fighter name
-    const idx = html.toLowerCase().indexOf(nameLower)
-    if (idx === -1) return null
-    const chunk = html.slice(Math.max(0, idx - 1000), idx + 200)
-    const timeMatch = chunk.match(/class="eta[^"]*">(\d{1,2}:\d{2})</)
-    return timeMatch ? timeMatch[1] : null
-  }
+  // Find all positions where fighter appears
+  const fighterOccurrences = participants.filter(p => p.name.toLowerCase().includes(nameLower))
+  if (!fighterOccurrences.length) return null
 
-  // If multiple rows (fighter in multiple categories), pick best match
-  let bestRow = matchingRows[0]
-  if (matchingRows.length > 1 && bracketCategory) {
+  // If multiple (multi-category), pick by GI/NoGi
+  let best = fighterOccurrences[0]
+  if (fighterOccurrences.length > 1 && bracketCategory) {
     const catLower = bracketCategory.toLowerCase()
     const isNoGi = /no.?gi/i.test(catLower)
     const isGi = /\bgi\b/.test(catLower) && !isNoGi
-    for (const row of matchingRows) {
-      // Look at the category-row above this match-row
-      const rowIdx = html.indexOf(row)
-      const before = html.slice(Math.max(0, rowIdx - 500), rowIdx).toLowerCase()
-      if (isNoGi && /no.?gi/i.test(before)) { bestRow = row; break }
-      if (isGi && /\bgi\b/.test(before) && !/no.?gi/i.test(before)) { bestRow = row; break }
+    for (const occ of fighterOccurrences) {
+      const nearCat = categories.filter(c => c.pos < occ.pos).pop()
+      if (!nearCat) continue
+      const c = nearCat.cat.toLowerCase()
+      if (isNoGi && /no.?gi/i.test(c)) { best = occ; break }
+      if (isGi && /\bgi\b/.test(c) && !/no.?gi/i.test(c)) { best = occ; break }
     }
   }
 
-  const timeMatch = bestRow.match(/class="eta[^"]*">(\d{1,2}:\d{2})</)
-  const matFightMatch = bestRow.match(/class="number">(\d+)-(\d+)</)
-  const opponentMatch = [...bestRow.matchAll(/class="participant[^"]*">\s*([^\n<]+)/g)]
-    .map(m => m[1].trim())
-    .find(n => n.toLowerCase() !== fighterName.toLowerCase() && n.length > 2)
+  // Find closest number, eta, and opponent near the fighter position
+  const nearNum = numbers.filter(n => n.pos < best.pos).pop()
+  const nearEta = etas.filter(e => e.pos < best.pos).pop()
+  const opponent = participants
+    .filter(p => p.pos > (nearNum?.pos || 0) && p.pos !== best.pos)
+    .find(p => !p.name.toLowerCase().includes(nameLower))
 
   return {
-    time: timeMatch ? timeMatch[1] : null,
-    mat: matFightMatch ? matFightMatch[1] : null,
-    fight: matFightMatch ? matFightMatch[2] : null,
-    opponent: opponentMatch || null,
+    time: nearEta?.time || null,
+    mat: nearNum ? nearNum.ref.split('-')[0] : null,
+    fight: nearNum ? nearNum.ref.split('-')[1] : null,
+    opponent: opponent?.name || null,
   }
 }
 
