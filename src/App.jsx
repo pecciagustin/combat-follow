@@ -255,7 +255,7 @@ export default function App() {
   }
 
   const isMonitoring = fighters.length > 0
-  const showSlowNotice = fighters.length >= 6
+  const showSlowNotice = isLoading && fighters.length >= 6
 
   // Sort fighters by next match time (earliest first, no-time goes to bottom)
   const sortedFighters = [...fighters].sort((a, b) => {
