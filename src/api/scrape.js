@@ -2,7 +2,20 @@
 // and requests are not rate-limited per browser IP
 const PROXY_BASE = '/api/fetch?url='
 
+// Matchlist pages support CORS — fetch directly from browser, no proxy needed
+// This avoids Jina limits AND Cloudflare server-side blocks
+function isDirectFetchable(url) {
+  return url.includes('/schedule/matchlist')
+}
+
 async function fetchPageText(url, retries = 3) {
+  if (isDirectFetchable(url)) {
+    // Direct browser fetch — AJP/Smoothcomp allow CORS from our domain
+    const res = await fetch(url, { credentials: 'omit' })
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
+    return res.text()
+  }
+  // Bracket pages: use proxy (Jina)
   for (let attempt = 0; attempt <= retries; attempt++) {
     const res = await fetch(PROXY_BASE + encodeURIComponent(url))
     if (res.status === 429) {
