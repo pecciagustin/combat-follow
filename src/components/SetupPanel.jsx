@@ -2,51 +2,47 @@ import { useState } from 'react'
 
 export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner }) {
   const [name, setName] = useState('')
-  const [url, setUrl] = useState('')
   const [matchlistUrl, setMatchlistUrl] = useState('')
   const [emailDraft, setEmailDraft] = useState(emailConfig)
   const [emailSaved, setEmailSaved] = useState(false)
+
+  const [editingId, setEditingId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editMatchlistUrl, setEditMatchlistUrl] = useState('')
 
   function handleEmailSave() {
     onEmailConfig(emailDraft)
     setEmailSaved(true)
     setTimeout(() => setEmailSaved(false), 2000)
   }
-  const [editingId, setEditingId] = useState(null)
-  const [editName, setEditName] = useState('')
-  const [editUrl, setEditUrl] = useState('')
-  const [editMatchlistUrl, setEditMatchlistUrl] = useState('')
 
   function handleSubmit(e) {
     e.preventDefault()
     const trimName = name.trim()
-    const trimUrl = url.trim()
+    const trimUrl = matchlistUrl.trim()
     if (!trimName || !trimUrl) return
-    onAdd({ name: trimName, bracketUrl: trimUrl, matchlistUrl: matchlistUrl.trim() || null })
+    onAdd({ name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl })
     setName('')
-    setUrl('')
     setMatchlistUrl('')
   }
 
   function startEdit(f) {
     setEditingId(f.id)
     setEditName(f.name)
-    setEditUrl(f.bracketUrl)
-    setEditMatchlistUrl(f.matchlistUrl || '')
+    setEditMatchlistUrl(f.matchlistUrl || f.bracketUrl || '')
   }
 
   function cancelEdit() {
     setEditingId(null)
     setEditName('')
-    setEditUrl('')
     setEditMatchlistUrl('')
   }
 
   function handleEditSave(id) {
     const trimName = editName.trim()
-    const trimUrl = editUrl.trim()
+    const trimUrl = editMatchlistUrl.trim()
     if (!trimName || !trimUrl) return
-    onEdit(id, { name: trimName, bracketUrl: trimUrl, matchlistUrl: editMatchlistUrl.trim() || null })
+    onEdit(id, { name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl })
     cancelEdit()
   }
 
@@ -59,7 +55,7 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
           <input
             id="fighter-name"
             type="text"
-            placeholder="Ej: Juan García"
+            placeholder="Ej: JoelJoan Gallego Marrufo"
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoComplete="off"
@@ -68,20 +64,7 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
           />
         </div>
         <div className="form-group">
-          <label htmlFor="fighter-url">Bracket URL</label>
-          <input
-            id="fighter-url"
-            type="url"
-            placeholder="https://smoothcomp.com/... o bjjcompsystem.com/..."
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="fighter-matchlist">Matchlist URL <span style={{ color: 'var(--text-secondary)', fontWeight: 400, textTransform: 'none' }}>(opcional)</span></label>
+          <label htmlFor="fighter-matchlist">Matchlist URL</label>
           <input
             id="fighter-matchlist"
             type="url"
@@ -97,7 +80,7 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
           type="submit"
           className="btn-primary"
           style={{ width: '100%' }}
-          disabled={!name.trim() || !url.trim()}
+          disabled={!name.trim() || !matchlistUrl.trim()}
         >
           + Agregar
         </button>
@@ -140,18 +123,7 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
                         />
                       </div>
                       <div className="form-group" style={{ marginBottom: 8 }}>
-                        <label>Bracket URL</label>
-                        <input
-                          type="url"
-                          value={editUrl}
-                          onChange={(e) => setEditUrl(e.target.value)}
-                          autoComplete="off"
-                          autoCorrect="off"
-                          autoCapitalize="off"
-                        />
-                      </div>
-                      <div className="form-group" style={{ marginBottom: 8 }}>
-                        <label>Matchlist URL <span style={{ color: 'var(--text-secondary)', fontWeight: 400, textTransform: 'none' }}>(opcional)</span></label>
+                        <label>Matchlist URL</label>
                         <input
                           type="url"
                           value={editMatchlistUrl}
@@ -167,7 +139,7 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
                           className="btn-primary"
                           style={{ flex: 1 }}
                           onClick={() => handleEditSave(f.id)}
-                          disabled={!editName.trim() || !editUrl.trim()}
+                          disabled={!editName.trim() || !editMatchlistUrl.trim()}
                         >
                           Guardar
                         </button>
@@ -180,22 +152,10 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div className="fighter-item-info">
                         <div className="fighter-item-name">{f.name}</div>
-                        <div className="fighter-item-url">{f.bracketUrl}</div>
+                        <div className="fighter-item-url">{f.matchlistUrl || f.bracketUrl}</div>
                       </div>
-                      <button
-                        className="btn-ghost"
-                        onClick={() => startEdit(f)}
-                        aria-label={`Editar ${f.name}`}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        className="btn-danger"
-                        onClick={() => onRemove(f.id)}
-                        aria-label={`Eliminar ${f.name}`}
-                      >
-                        ✕
-                      </button>
+                      <button className="btn-ghost" onClick={() => startEdit(f)} aria-label={`Editar ${f.name}`}>✎</button>
+                      <button className="btn-danger" onClick={() => onRemove(f.id)} aria-label={`Eliminar ${f.name}`}>✕</button>
                     </div>
                   )}
                 </div>
@@ -230,11 +190,7 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
             />
           </div>
         ))}
-        <button
-          className="btn-primary"
-          style={{ width: '100%', marginTop: 4 }}
-          onClick={handleEmailSave}
-        >
+        <button className="btn-primary" style={{ width: '100%', marginTop: 4 }} onClick={handleEmailSave}>
           {emailSaved ? '✓ Guardado' : 'Guardar'}
         </button>
         <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 12, lineHeight: 1.5 }}>

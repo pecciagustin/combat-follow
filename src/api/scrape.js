@@ -474,9 +474,9 @@ export async function scrapeAllFighters(fighters) {
       // 1. Fetch bracket
       const data = await scrapeOneFighter(fighter)
 
-      // 2. Fetch matchlist directly (no Jina, server-side rendered) — always works
+      // 2. Fetch matchlist directly from browser (CORS supported, no Jina needed)
       try {
-        const matchlistUrl = buildMatchlistSearchUrl(fighter.bracketUrl, fighter.name, fighter.matchlistUrl)
+        const matchlistUrl = fighter.matchlistUrl || buildMatchlistSearchUrl(fighter.bracketUrl, fighter.name, null)
         if (matchlistUrl) {
           const text = await fetchPageText(matchlistUrl)
           const matchlistData = extractTimeFromMatchlistText(text, fighter.name, data.category)
