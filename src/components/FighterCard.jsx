@@ -32,7 +32,14 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged, 
       {/* ── Compact row (always visible) ── */}
       <div className="card-compact" onClick={() => setExpanded((o) => !o)}>
         <div className="card-compact-left">
-          <div className="card-name">{fighter.name}</div>
+          <div className="card-name">
+            {fighter.name}
+            {matchData?.category && (
+              <span className="card-name-type">
+                {/no.?gi/i.test(matchData.category) ? ' (No-Gi)' : /\bgi\b/i.test(matchData.category) ? ' (Gi)' : ''}
+              </span>
+            )}
+          </div>
           {isChanged && <span className="badge badge-changed" style={{ marginTop: 3 }}>Horario cambiado</span>}
         </div>
 
