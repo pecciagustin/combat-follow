@@ -69,11 +69,26 @@ function parseMatchlistHtml(html, fighterName, discipline) {
   }
 }
 
+function deriveMatchlistUrl(fighter) {
+  // If already a matchlist URL, use directly
+  if (fighter.matchlistUrl) return fighter.matchlistUrl
+  const url = fighter.bracketUrl || ''
+  // If bracketUrl IS a matchlist URL, use it directly
+  if (url.includes('/schedule/matchlist')) return url
+  // Auto-derive from bracket URL (AJP/Smoothcomp format)
+  const m = url.match(/(https?:\/\/[^/]+\/(?:[a-z]{2}\/)?event\/\d+)/)
+  if (m) {
+    const firstName = encodeURIComponent(fighter.name.split(' ')[0].toLowerCase())
+    return `${m[1]}/schedule/matchlist?search=${firstName}&club=&catid=0&mat=&country=`
+  }
+  return url // fallback
+}
+
 export async function scrapeAllFighters(fighters) {
   // All matchlist fetches in parallel — direct browser fetch, no rate limiting
   const results = await Promise.all(fighters.map(async (fighter) => {
     try {
-      const matchlistUrl = fighter.matchlistUrl || fighter.bracketUrl
+      const matchlistUrl = deriveMatchlistUrl(fighter)
       if (!matchlistUrl) throw new Error('No matchlist URL configured')
 
       const text = await fetchPageText(matchlistUrl)
