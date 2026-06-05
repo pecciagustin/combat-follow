@@ -332,7 +332,44 @@ async function scrapeOneFighter(fighter) {
     return parseBjjCompSystem(text, fighter.name)
   }
   const text = await fetchPageText(fighter.bracketUrl)
-  return parseMatchData(text, fighter.name)
+  const data = parseMatchData(text, fighter.name)
+
+  // If no time found, try fetching the mat schedule page
+  if (data && data.status !== 'notfound' && data.status !== 'error' && !data.time) {
+    const matScheduleUrl = extractMatScheduleUrl(text)
+    if (matScheduleUrl) {
+      try {
+        const scheduleHtml = await fetchHtml(matScheduleUrl)
+        const scheduleTime = extractTimeFromSchedule(scheduleHtml, fighter.name)
+        if (scheduleTime) data.time = scheduleTime
+      } catch { /* ignore — time stays empty */ }
+    }
+  }
+
+  return data
+}
+
+function extractMatScheduleUrl(text) {
+  // Matches "Area[Mat 4](https://.../schedule/mat/12345)"
+  const m = text.match(/Area\[Mat[^\]]*\]\((https?:\/\/[^)]+\/schedule\/mat\/\d+)\)/)
+  return m ? m[1] : null
+}
+
+function extractTimeFromSchedule(html, fighterName) {
+  const nameLower = fighterName.toLowerCase()
+  const idx = html.toLowerCase().indexOf(nameLower)
+  if (idx === -1) return null
+
+  // Look for a time <span> in the ~1000 chars before the fighter name
+  const before = html.slice(Math.max(0, idx - 1000), idx)
+  const times = [...before.matchAll(/<span>(\d{1,2}:\d{2})<\/span>/g)]
+  if (times.length === 0) return null
+
+  // Take the last time found before the fighter name
+  const last = times[times.length - 1][1]
+  // Only return if it looks like a real scheduled time (not 5:00 match duration)
+  if (/^[6-9]:\d{2}$|^[01]\d:\d{2}$|^2[0-3]:\d{2}$/.test(last)) return last
+  return null
 }
 
 export async function scrapeAllFighters(fighters) {
