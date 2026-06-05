@@ -1,20 +1,15 @@
-const JINA_BASE = 'https://r.jina.ai/'
-
-function jinaHeaders() {
-  const headers = { Accept: 'text/plain' }
-  const key = import.meta.env.VITE_JINA_API_KEY
-  if (key && key !== 'none') headers['Authorization'] = `Bearer ${key}`
-  return headers
-}
+// Use our Vercel proxy so the Jina API key stays server-side
+// and requests are not rate-limited per browser IP
+const PROXY_BASE = '/api/fetch?url='
 
 async function fetchPageText(url, retries = 3) {
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(JINA_BASE + url, { headers: jinaHeaders() })
+    const res = await fetch(PROXY_BASE + encodeURIComponent(url))
     if (res.status === 429) {
-      if (attempt < retries) { await new Promise(r => setTimeout(r, 4000 * (attempt + 1))); continue }
+      if (attempt < retries) { await new Promise(r => setTimeout(r, 3000 * (attempt + 1))); continue }
       throw new Error('Jina fetch failed: 429')
     }
-    if (!res.ok) throw new Error(`Jina fetch failed: ${res.status}`)
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
     return res.text()
   }
 }
@@ -214,9 +209,9 @@ function parseBjjCompSystem(text, fighterName) {
 }
 
 async function fetchHtml(url) {
-  const headers = jinaHeaders()
-  headers['X-Return-Format'] = 'html'
-  return fetchWithRetry(JINA_BASE + url, { headers })
+  const res = await fetch(PROXY_BASE + encodeURIComponent(url) + '&format=html')
+  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
+  return res.text()
 }
 
 function parseBjjCompSystemHtml(html, fighterName) {
@@ -391,21 +386,8 @@ function extractTimeFromMatchlistText(lines, fighterName, bracketCategory) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-async function fetchWithRetry(url, options, retries = 3) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(url, options)
-    if (res.status === 429) {
-      if (attempt < retries) { await sleep(3000 * (attempt + 1)); continue }
-      throw new Error('Jina fetch failed: 429')
-    }
-    if (!res.ok) throw new Error(`Jina fetch failed: ${res.status}`)
-    return res.text()
-  }
-}
-
-// Override fetchPageText to use retry logic
 async function fetchPageTextWithRetry(url) {
-  return fetchWithRetry(JINA_BASE + url, { headers: jinaHeaders() })
+  return fetchPageText(url)
 }
 
 export async function scrapeAllFighters(fighters) {
