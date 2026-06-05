@@ -216,9 +216,7 @@ function parseBjjCompSystem(text, fighterName) {
 async function fetchHtml(url) {
   const headers = jinaHeaders()
   headers['X-Return-Format'] = 'html'
-  const res = await fetch(JINA_BASE + url, { headers })
-  if (!res.ok) throw new Error(`Jina fetch failed: ${res.status}`)
-  return res.text()
+  return fetchWithRetry(JINA_BASE + url, { headers })
 }
 
 function parseBjjCompSystemHtml(html, fighterName) {
@@ -407,7 +405,7 @@ async function fetchWithRetry(url, options, retries = 3) {
 
 // Override fetchPageText to use retry logic
 async function fetchPageTextWithRetry(url) {
-  return fetchWithRetry(JINA_BASE + url, { headers: { Accept: 'text/plain' } })
+  return fetchWithRetry(JINA_BASE + url, { headers: jinaHeaders() })
 }
 
 export async function scrapeAllFighters(fighters) {
