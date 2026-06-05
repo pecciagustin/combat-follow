@@ -236,6 +236,23 @@ export default function App() {
     refresh()
   }
 
+  async function activateServerMonitoring() {
+    if (!fighters.length) return alert('No hay luchadores configurados.')
+    if (!emailConfig.serviceId) return alert('Configura las notificaciones de email primero.')
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fighters, emailConfig }),
+      })
+      const data = await res.json()
+      if (data.ok) alert(`✅ Monitoreo activado para ${data.count} luchadores.\n\nEl servidor revisará los horarios cada 2 minutos y te enviará un email si hay cambios.`)
+      else alert('Error al activar: ' + data.error)
+    } catch (e) {
+      alert('Error de conexión: ' + e.message)
+    }
+  }
+
   const isMonitoring = fighters.length > 0
   const showSlowNotice = fighters.length >= 6
 
@@ -304,6 +321,11 @@ export default function App() {
               ))}
             </select>
             <div className="spacer" />
+            {fighters.length > 0 && (
+              <button className="btn-ghost" style={{ fontSize: 11, minHeight: 32 }} onClick={activateServerMonitoring}>
+                ⚙ Servidor
+              </button>
+            )}
           </div>
 
           {showSlowNotice && (
