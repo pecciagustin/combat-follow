@@ -334,42 +334,42 @@ async function scrapeOneFighter(fighter) {
   const text = await fetchPageText(fighter.bracketUrl)
   const data = parseMatchData(text, fighter.name)
 
-  // If no time found, try fetching the mat schedule page
-  if (data && data.status !== 'notfound' && data.status !== 'error' && !data.time) {
-    const matScheduleUrl = extractMatScheduleUrl(text)
-    if (matScheduleUrl) {
-      try {
-        const scheduleHtml = await fetchHtml(matScheduleUrl)
-        const scheduleTime = extractTimeFromSchedule(scheduleHtml, fighter.name)
-        if (scheduleTime) data.time = scheduleTime
-      } catch { /* ignore — time stays empty */ }
-    }
+  // Always try to get the scheduled time from the matchlist search URL
+  if (data && data.status !== 'notfound' && data.status !== 'error') {
+    try {
+      const matchlistTime = await fetchMatchlistTime(fighter.bracketUrl, fighter.name)
+      if (matchlistTime) data.time = matchlistTime
+    } catch { /* ignore — time stays empty */ }
   }
 
   return data
 }
 
-function extractMatScheduleUrl(text) {
-  // Matches "Area[Mat 4](https://.../schedule/mat/12345)"
-  const m = text.match(/Area\[Mat[^\]]*\]\((https?:\/\/[^)]+\/schedule\/mat\/\d+)\)/)
-  return m ? m[1] : null
+function buildMatchlistUrl(bracketUrl, fighterName) {
+  // From: https://ajptour.com/en/event/1450/bracket/129306
+  // To:   https://ajptour.com/en/event/1450/schedule/matchlist?search=joeljoan
+  const m = bracketUrl.match(/(https?:\/\/[^/]+\/(?:[a-z]{2}\/)?event\/(\d+))/)
+  if (!m) return null
+  const base = m[1]
+  const searchName = encodeURIComponent(fighterName.split(' ')[0].toLowerCase())
+  return `${base}/schedule/matchlist?search=${searchName}&club=&catid=0&mat=&country=`
 }
 
-function extractTimeFromSchedule(html, fighterName) {
+async function fetchMatchlistTime(bracketUrl, fighterName) {
+  const url = buildMatchlistUrl(bracketUrl, fighterName)
+  if (!url) return null
+  const text = await fetchPageText(url)
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const nameLower = fighterName.toLowerCase()
-  const idx = html.toLowerCase().indexOf(nameLower)
+
+  // Find the fighter name in the matchlist text
+  const idx = lines.findIndex(l => l.toLowerCase().includes(nameLower))
   if (idx === -1) return null
 
-  // Look for a time <span> in the ~1000 chars before the fighter name
-  const before = html.slice(Math.max(0, idx - 1000), idx)
-  const times = [...before.matchAll(/<span>(\d{1,2}:\d{2})<\/span>/g)]
-  if (times.length === 0) return null
-
-  // Take the last time found before the fighter name
-  const last = times[times.length - 1][1]
-  // Only return if it looks like a real scheduled time (not 5:00 match duration)
-  if (/^[6-9]:\d{2}$|^[01]\d:\d{2}$|^2[0-3]:\d{2}$/.test(last)) return last
-  return null
+  // Look in the surrounding lines for a time (HH:MM format)
+  const window = lines.slice(Math.max(0, idx - 5), idx + 3).join(' ')
+  const timeMatch = window.match(/\b([6-9]:\d{2}|[01]\d:\d{2}|2[0-3]:\d{2})\b/)
+  return timeMatch ? timeMatch[1] : null
 }
 
 export async function scrapeAllFighters(fighters) {
