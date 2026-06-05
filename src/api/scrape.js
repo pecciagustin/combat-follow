@@ -1,11 +1,15 @@
 const JINA_BASE = 'https://r.jina.ai/'
 
-async function fetchPageText(url) {
-  const res = await fetch(JINA_BASE + url, {
-    headers: { Accept: 'text/plain' },
-  })
-  if (!res.ok) throw new Error(`Jina fetch failed: ${res.status}`)
-  return res.text()
+async function fetchPageText(url, retries = 3) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(JINA_BASE + url, { headers: { Accept: 'text/plain' } })
+    if (res.status === 429) {
+      if (attempt < retries) { await new Promise(r => setTimeout(r, 4000 * (attempt + 1))); continue }
+      throw new Error('Jina fetch failed: 429')
+    }
+    if (!res.ok) throw new Error(`Jina fetch failed: ${res.status}`)
+    return res.text()
+  }
 }
 
 function parseMatchData(text, fighterName) {
@@ -425,32 +429,28 @@ export async function scrapeAllFighters(fighters) {
     if (i < matchlistKeys.length - 1) await sleep(1500)
   }
 
-  // Step 2: Fetch bracket pages in batches of 3 (only 1 request each now)
+  // Step 2: Fetch bracket pages ONE AT A TIME with delay (Jina rate limit is strict)
   const results = []
-  const BATCH_SIZE = 3
-  const BATCH_DELAY = 2000
+  const REQUEST_DELAY = 2500 // ms between each bracket fetch
 
-  for (let i = 0; i < fighters.length; i += BATCH_SIZE) {
-    const batch = fighters.slice(i, i + BATCH_SIZE)
-    const batchResults = await Promise.all(batch.map(async (fighter) => {
-      try {
-        const data = await scrapeOneFighter(fighter)
-        // Inject time from cached matchlist
-        if (data && data.status !== 'notfound' && data.status !== 'error') {
-          const key = fighter.matchlistUrl || buildMatchlistBaseUrl(fighter.bracketUrl)
-          const lines = key ? matchlistCache.get(key) : null
-          if (lines?.length) {
-            const time = extractTimeFromMatchlistText(lines, fighter.name, data.category)
-            if (time) data.time = time
-          }
+  for (let i = 0; i < fighters.length; i++) {
+    const fighter = fighters[i]
+    try {
+      const data = await scrapeOneFighter(fighter)
+      // Inject time from cached matchlist
+      if (data && data.status !== 'notfound' && data.status !== 'error') {
+        const key = fighter.matchlistUrl || buildMatchlistBaseUrl(fighter.bracketUrl)
+        const lines = key ? matchlistCache.get(key) : null
+        if (lines?.length) {
+          const time = extractTimeFromMatchlistText(lines, fighter.name, data.category)
+          if (time) data.time = time
         }
-        return { id: fighter.id, data, error: null }
-      } catch (err) {
-        return { id: fighter.id, data: null, error: err.message || 'Error fetching data' }
       }
-    }))
-    results.push(...batchResults)
-    if (i + BATCH_SIZE < fighters.length) await sleep(BATCH_DELAY)
+      results.push({ id: fighter.id, data, error: null })
+    } catch (err) {
+      results.push({ id: fighter.id, data: null, error: err.message || 'Error fetching data' })
+    }
+    if (i < fighters.length - 1) await sleep(REQUEST_DELAY)
   }
 
   return results
