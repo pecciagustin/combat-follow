@@ -332,19 +332,22 @@ function parseBjjCompSystemHtml(html, fighterName) {
 }
 
 async function scrapeOneFighter(fighter) {
-  if (fighter.bracketUrl.includes('bjjcompsystem.com') && !fighter.bracketUrl.includes('smoothcomp') && !fighter.bracketUrl.includes('ajptour')) {
-    const html = await fetchHtml(fighter.bracketUrl)
-    const result = parseBjjCompSystemHtml(html, fighter.name)
-    if (result) return result
-    // Fallback to text parser
+  // Try bracket fetch — if it fails (e.g. Jina quota), return minimal stub
+  // Time and mat come from matchlist anyway (always fetched directly, no Jina)
+  try {
+    if (fighter.bracketUrl.includes('bjjcompsystem.com') && !fighter.bracketUrl.includes('smoothcomp') && !fighter.bracketUrl.includes('ajptour')) {
+      const html = await fetchHtml(fighter.bracketUrl)
+      const result = parseBjjCompSystemHtml(html, fighter.name)
+      if (result) return result
+      const text = await fetchPageText(fighter.bracketUrl)
+      return parseBjjCompSystem(text, fighter.name)
+    }
     const text = await fetchPageText(fighter.bracketUrl)
-    return parseBjjCompSystem(text, fighter.name)
+    return parseMatchData(text, fighter.name)
+  } catch {
+    // Bracket unavailable — return stub so matchlist time still shows
+    return { athlete: fighter.name, opponent: null, category: null, time: null, mat: null, fight: null, status: 'upcoming', fights: [] }
   }
-  const text = await fetchPageText(fighter.bracketUrl)
-  const data = parseMatchData(text, fighter.name)
-
-  // Time is injected later from the shared matchlist cache (see scrapeAllFighters)
-  return data
 }
 
 function buildMatchlistBaseUrl(bracketUrl) {
@@ -396,7 +399,17 @@ function parseMatchlistHtml(html, fighterName, bracketCategory) {
   }
 
   const timeMatch = bestRow.match(/class="eta[^"]*">(\d{1,2}:\d{2})</)
-  return timeMatch ? timeMatch[1] : null
+  const matFightMatch = bestRow.match(/class="number">(\d+)-(\d+)</)
+  const opponentMatch = [...bestRow.matchAll(/class="participant[^"]*">\s*([^\n<]+)/g)]
+    .map(m => m[1].trim())
+    .find(n => n.toLowerCase() !== fighterName.toLowerCase() && n.length > 2)
+
+  return {
+    time: timeMatch ? timeMatch[1] : null,
+    mat: matFightMatch ? matFightMatch[1] : null,
+    fight: matFightMatch ? matFightMatch[2] : null,
+    opponent: opponentMatch || null,
+  }
 }
 
 function extractTimeFromMatchlistText(text, fighterName, bracketCategory) {
@@ -456,18 +469,24 @@ export async function scrapeAllFighters(fighters) {
       // 1. Fetch bracket
       const data = await scrapeOneFighter(fighter)
 
-      // 2. Fetch matchlist with specific fighter name search (small focused page)
-      if (data && data.status !== 'notfound' && data.status !== 'error') {
-        try {
-          const matchlistUrl = buildMatchlistSearchUrl(fighter.bracketUrl, fighter.name, fighter.matchlistUrl)
-          if (matchlistUrl) {
-            const text = await fetchPageText(matchlistUrl)
-            const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-            const time = extractTimeFromMatchlistText(lines, fighter.name, data.category)
-            if (time) data.time = time
+      // 2. Fetch matchlist directly (no Jina, server-side rendered) — always works
+      try {
+        const matchlistUrl = buildMatchlistSearchUrl(fighter.bracketUrl, fighter.name, fighter.matchlistUrl)
+        if (matchlistUrl) {
+          const text = await fetchPageText(matchlistUrl)
+          const matchlistData = extractTimeFromMatchlistText(text, fighter.name, data.category)
+          if (matchlistData && typeof matchlistData === 'object') {
+            // Merge matchlist data — override bracket data with fresher matchlist data
+            if (matchlistData.time) data.time = matchlistData.time
+            if (matchlistData.mat) data.mat = matchlistData.mat
+            if (matchlistData.fight) data.fight = matchlistData.fight
+            if (matchlistData.opponent && !data.opponent) data.opponent = matchlistData.opponent
+            if (data.status === 'upcoming' || !data.status) data.status = 'upcoming'
+          } else if (typeof matchlistData === 'string') {
+            data.time = matchlistData
           }
-        } catch { /* time stays empty */ }
-      }
+        }
+      } catch { /* matchlist unavailable, use bracket data only */ }
 
       results.push({ id: fighter.id, data, error: null })
     } catch (err) {
