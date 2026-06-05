@@ -362,11 +362,15 @@ async function fetchMatchlistTime(bracketUrl, fighterName) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const nameLower = fighterName.toLowerCase()
 
-  // Find the fighter name in the matchlist text
-  const idx = lines.findIndex(l => l.toLowerCase().includes(nameLower))
+  // Skip header lines — find fighter name AFTER the "Markdown Content:" marker
+  const contentStart = lines.findIndex(l => l.startsWith('Markdown Content'))
+  const searchFrom = contentStart >= 0 ? contentStart : 0
+
+  // Find the fighter name in the match content (not the URL header)
+  const idx = lines.findIndex((l, i) => i > searchFrom && l.toLowerCase().includes(nameLower) && !l.startsWith('http') && !l.startsWith('*'))
   if (idx === -1) return null
 
-  // Look in the surrounding lines for a time (HH:MM format)
+  // Look in surrounding lines for a time (HH:MM format)
   const window = lines.slice(Math.max(0, idx - 5), idx + 3).join(' ')
   const timeMatch = window.match(/\b([6-9]:\d{2}|[01]\d:\d{2}|2[0-3]:\d{2})\b/)
   return timeMatch ? timeMatch[1] : null
