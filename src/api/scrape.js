@@ -13,11 +13,16 @@ function parseMatchData(text, fighterName) {
   const nameLower = fighterName.toLowerCase()
 
   // Category: first line that looks like a division heading
-  const categoryLine = lines.find((l) =>
-    /\b(no.?gi|gi)\b/i.test(l) ||
-    /\b(white|blue|purple|brown|black)\b/i.test(l) ||
-    /\b(adult|master|juvenile)\b/i.test(l)
-  )
+  // Skip navigation/menu lines (start with *, [, contain http, or are too long)
+  const categoryLine = lines.find((l) => {
+    if (l.startsWith('*') || l.startsWith('[') || l.startsWith('!') || l.includes('http')) return false
+    if (l.length > 100) return false
+    return (
+      /\b(no.?gi|gi)\b/i.test(l) ||
+      /\b(white|blue|purple|brown|black)\b/i.test(l) ||
+      /\b(adult|master|juvenile)\b/i.test(l)
+    )
+  })
   const category = categoryLine ? categoryLine.replace(/^#+\s*/, '').replace(/\*+/g, '').trim() : null
 
   // Find ALL occurrences of the fighter name in the text
@@ -370,10 +375,10 @@ async function fetchMatchlistTime(bracketUrl, fighterName, manualMatchlistUrl) {
   const idx = lines.findIndex((l, i) => i > searchFrom && l.toLowerCase().includes(nameLower) && !l.startsWith('http') && !l.startsWith('*'))
   if (idx === -1) return null
 
-  // Look in surrounding lines for a time (HH:MM format)
+  // Look in surrounding lines for a time (HH:MM) — take the LAST one (closest to fighter)
   const window = lines.slice(Math.max(0, idx - 5), idx + 3).join(' ')
-  const timeMatch = window.match(/\b([6-9]:\d{2}|[01]\d:\d{2}|2[0-3]:\d{2})\b/)
-  return timeMatch ? timeMatch[1] : null
+  const allTimes = [...window.matchAll(/\b([6-9]:\d{2}|[01]\d:\d{2}|2[0-3]:\d{2})\b/g)]
+  return allTimes.length > 0 ? allTimes[allTimes.length - 1][1] : null
 }
 
 export async function scrapeAllFighters(fighters) {
