@@ -417,9 +417,8 @@ button:active {
   text-transform: uppercase;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .card-badges {
