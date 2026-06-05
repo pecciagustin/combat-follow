@@ -71,7 +71,7 @@ export default function App() {
   const [showQR, setShowQR] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const intervalRef = useRef(null)
-  const prevMatchRef = useRef({})
+  const isLoadingRef = useRef(false) // ref-based lock — never stale in closures
 
   useEffect(() => {
     saveFighters(fighters)
@@ -79,7 +79,8 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     if (fighters.length === 0) return
-    if (isLoading) return  // debounce — ignore if already running
+    if (isLoadingRef.current) return  // debounce — reliable ref, never stale
+    isLoadingRef.current = true
     setIsLoading(true)
     try {
       const results = await scrapeAllFighters(fighters)
@@ -93,7 +94,6 @@ export default function App() {
           if (error) { next[id] = { status: 'error', message: error }; return }
           next[id] = data
         })
-        prevMatchRef.current = { ...next }
         return next
       })
 
@@ -124,6 +124,7 @@ export default function App() {
     } catch (err) {
       console.error('Refresh error:', err)
     } finally {
+      isLoadingRef.current = false
       setIsLoading(false)
     }
   }, [fighters])
@@ -251,10 +252,10 @@ export default function App() {
   const sortedFighters = [...fighters].sort((a, b) => {
     const tA = matchMap[a.id]?.time
     const tB = matchMap[b.id]?.time
-    if (tA && tB) return tA.localeCompare(tB)
+    if (tA && tB) return tA.localeCompare(tB) || a.name.localeCompare(b.name)
     if (tA) return -1
     if (tB) return 1
-    return 0
+    return a.name.localeCompare(b.name)
   })
 
   return (

@@ -87,51 +87,52 @@ export default async function handler(req) {
     const newState = { ...state }
     const log = []
 
-    for (const fighter of fighters) {
+    // Fetch all fighters in parallel — same as client-side
+    const fighterResults = await Promise.all(fighters.map(async (fighter) => {
       try {
         const matchlistUrl = deriveMatchlistUrl(fighter)
-        if (!matchlistUrl) { log.push(`${fighter.name}: no URL`); continue }
-
+        if (!matchlistUrl) return { fighter, error: 'no URL' }
         const html = await fetchMatchlist(matchlistUrl)
         const data = parseMatchlist(html, fighter.name, fighter.discipline)
-        if (!data) { log.push(`${fighter.name}: not found`); continue }
-
-        const { time, matchRef } = data
-        const key = fighter.id
-        const prev = state[key] || {}
-        const changes = []
-
-        // Detect new fight (fighter advanced in bracket)
-        if (prev.matchRef && matchRef && prev.matchRef !== matchRef)
-          changes.push(`Nuevo combate: ${prev.matchRef} → ${matchRef}`)
-
-        // Detect time change
-        if (prev.time && time && prev.time !== time)
-          changes.push(`Hora: ${prev.time} → ${time}`)
-
-        // Detect <10 min alert (only once per fight)
-        const alertKey = `${key}-${matchRef || time}`
-        if (time && !state[`alerted:${alertKey}`]) {
-          const [h, m] = time.split(':').map(Number)
-          const now = new Date()
-          const fight = new Date(now)
-          fight.setHours(h, m, 0, 0)
-          const mins = Math.round((fight - now) / 60000)
-          if (mins >= 0 && mins < 10) {
-            changes.push(`⚡ COMBATE EN MENOS DE 10 MIN — Mat ${data.mat || '?'} a las ${time}`)
-            newState[`alerted:${alertKey}`] = true
-          }
-        }
-
-        if (changes.length) {
-          await sendEmail(emailConfig, fighter.name, changes.join('\n'))
-          log.push(`${fighter.name}: ${changes.join(', ')}`)
-        }
-
-        newState[key] = { time, matchRef, updatedAt: Date.now() }
+        return { fighter, data, error: data ? null : 'not found' }
       } catch (e) {
-        log.push(`${fighter.name}: error - ${e.message}`)
+        return { fighter, data: null, error: e.message }
       }
+    }))
+
+    for (const { fighter, data, error } of fighterResults) {
+      if (error || !data) { log.push(`${fighter.name}: ${error}`); continue }
+
+      const { time, matchRef } = data
+      const key = fighter.id
+      const prev = state[key] || {}
+      const changes = []
+
+      if (prev.matchRef && matchRef && prev.matchRef !== matchRef)
+        changes.push(`Nuevo combate: ${prev.matchRef} → ${matchRef}`)
+
+      if (prev.time && time && prev.time !== time)
+        changes.push(`Hora: ${prev.time} → ${time}`)
+
+      const alertKey = `${key}-${matchRef || time}`
+      if (time && !state[`alerted:${alertKey}`]) {
+        const [h, m] = time.split(':').map(Number)
+        const now = new Date()
+        const fight = new Date(now)
+        fight.setHours(h, m, 0, 0)
+        const mins = Math.round((fight - now) / 60000)
+        if (mins >= 0 && mins < 10) {
+          changes.push(`⚡ COMBATE EN MENOS DE 10 MIN — a las ${time}`)
+          newState[`alerted:${alertKey}`] = true
+        }
+      }
+
+      if (changes.length) {
+        await sendEmail(emailConfig, fighter.name, changes.join('\n'))
+        log.push(`${fighter.name}: ${changes.join(', ')}`)
+      }
+
+      newState[key] = { time, matchRef, updatedAt: Date.now() }
     }
 
     await redis.set('cf:state', JSON.stringify(newState))
