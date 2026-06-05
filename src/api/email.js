@@ -14,16 +14,3 @@ export function sendChangeAlert({ config, fighter, changes }) {
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   })
 }
-
-export function sendLiveAlert({ config, fighter, matchData }) {
-  if (!config.serviceId || !config.templateId || !config.publicKey || !config.toEmail) return
-
-  emailjs.init(config.publicKey)
-
-  return emailjs.send(config.serviceId, config.templateId, {
-    to_email: config.toEmail,
-    fighter_name: fighter,
-    changes: `⚡ Pelea EN VIVO\nvs ${matchData?.opponent || 'TBD'} · Mat ${matchData?.mat || '?'} · Fight ${matchData?.fight || '?'}`,
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-  })
-}

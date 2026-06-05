@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import Header from './components/Header'
 import SetupPanel from './components/SetupPanel'
 import FighterCard from './components/FighterCard'
-import ChangeLog from './components/ChangeLog'
 import { scrapeAllFighters } from './api/scrape'
 import { sendChangeAlert } from './api/email'
 import QRModal from './components/QRModal'
@@ -63,10 +62,8 @@ export default function App() {
   const [tab, setTab] = useState('panel')
   const [fighters, setFighters] = useState(loadFighters)
   const [matchMap, setMatchMap] = useState({})
-  const [changedIds, setChangedIds] = useState(new Set())
   const [urgentIds, setUrgentIds] = useState(new Set())
   const [notifiedIds, setNotifiedIds] = useState(new Set())
-  const [changelog, setChangelog] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [intervalSec, setIntervalSec] = useState(120)
@@ -82,6 +79,7 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     if (fighters.length === 0) return
+    if (isLoading) return  // debounce — ignore if already running
     setIsLoading(true)
     try {
       const results = await scrapeAllFighters(fighters)
@@ -172,10 +170,8 @@ export default function App() {
     if (!window.confirm('¿Eliminar todos los luchadores?')) return
     setFighters([])
     setMatchMap({})
-    setChangedIds(new Set())
     setUrgentIds(new Set())
     setNotifiedIds(new Set())
-    setChangelog([])
   }
 
   function editFighter(id, updates) {
@@ -196,11 +192,6 @@ export default function App() {
     setMatchMap((prev) => {
       const next = { ...prev }
       delete next[id]
-      return next
-    })
-    setChangedIds((prev) => {
-      const next = new Set(prev)
-      next.delete(id)
       return next
     })
   }
@@ -233,7 +224,6 @@ export default function App() {
   }
 
   function handleManualRefresh() {
-    setChangedIds(new Set())
     refresh()
   }
 
@@ -353,7 +343,7 @@ export default function App() {
                     fighter={fighter}
                     matchData={matchMap[fighter.id] ?? null}
                     isLoading={isLoading && !matchMap[fighter.id]}
-                    isChanged={changedIds.has(fighter.id)}
+                    isChanged={false}
                     isUrgent={urgentIds.has(fighter.id)}
                     onNoteChange={(note) => updateNote(fighter.id, note)}
                   />
@@ -362,7 +352,6 @@ export default function App() {
             </div>
           )}
 
-          <ChangeLog entries={changelog} />
         </div>
       )}
 

@@ -2,68 +2,54 @@ import { Redis } from '@upstash/redis'
 
 export const config = { runtime: 'edge' }
 
-const JINA_BASE = 'https://r.jina.ai/'
+// Same logic as client-side scraper — direct fetch for matchlist (no Jina)
+function deriveMatchlistUrl(fighter) {
+  if (fighter.matchlistUrl) return fighter.matchlistUrl
+  const url = fighter.bracketUrl || ''
+  if (url.includes('/schedule/matchlist')) return url
+  const m = url.match(/(https?:\/\/[^/]+\/(?:[a-z]{2}\/)?event\/\d+)/)
+  if (m) {
+    const firstName = encodeURIComponent(fighter.name.split(' ')[0].toLowerCase())
+    return `${m[1]}/schedule/matchlist?search=${firstName}&club=&catid=0&mat=&country=`
+  }
+  return url
+}
 
-async function fetchJina(url) {
-  const headers = { Accept: 'text/plain' }
-  const key = process.env.VITE_JINA_API_KEY
-  if (key && key !== 'none') headers['Authorization'] = `Bearer ${key}`
-  const res = await fetch(JINA_BASE + url, { headers })
-  if (!res.ok) throw new Error(`Jina ${res.status}`)
+async function fetchMatchlist(url) {
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/html' } })
+  if (!res.ok) throw new Error(`Fetch ${res.status}`)
   return res.text()
 }
 
-function buildMatchlistUrl(bracketUrl, fighterName, manualUrl) {
-  if (manualUrl) return manualUrl
-  const m = bracketUrl.match(/(https?:\/\/[^/]+\/(?:[a-z]{2}\/)?event\/\d+)/)
-  if (!m) return null
-  const first = encodeURIComponent(fighterName.split(' ')[0].toLowerCase())
-  return `${m[1]}/schedule/matchlist?search=${first}&club=&catid=0&mat=&country=`
-}
-
-function extractTime(text, fighterName, category) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+function parseMatchlist(html, fighterName, discipline) {
   const nameLower = fighterName.toLowerCase()
-  const contentStart = lines.findIndex(l => l.startsWith('Markdown Content'))
-  const from = contentStart >= 0 ? contentStart : 0
+  const numbers      = [...html.matchAll(/<div class="number">([^<]+)<\/div>/g)].map(m => ({ pos: m.index, ref: m[1].trim() }))
+  const etas         = [...html.matchAll(/class="eta[^"]*">(\d{1,2}:\d{2})<\/div>/g)].map(m => ({ pos: m.index, time: m[1] }))
+  const participants = [...html.matchAll(/class="participant[^"]*">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, name: m[1].trim() }))
+  const categories   = [...html.matchAll(/class="category-row">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, cat: m[1].trim() }))
 
-  const idxs = lines.reduce((a, l, i) => {
-    if (i > from && l.toLowerCase().includes(nameLower) && !l.startsWith('http') && !l.startsWith('*')) a.push(i)
-    return a
-  }, [])
-  if (!idxs.length) return null
+  const occurrences = participants.filter(p => p.name.toLowerCase().includes(nameLower))
+  if (!occurrences.length) return null
 
-  let best = idxs[0]
-  if (idxs.length > 1 && category) {
-    const cat = category.toLowerCase()
-    const isGi = /\bgi\b/.test(cat) && !/no.?gi/i.test(cat)
-    const isNoGi = /no.?gi/i.test(cat)
-    for (const idx of idxs) {
-      const nearby = lines.slice(Math.max(0, idx - 10), idx).join(' ').toLowerCase()
-      if (isNoGi && /no.?gi/i.test(nearby)) { best = idx; break }
-      if (isGi && /\bgi\b/.test(nearby) && !/no.?gi/i.test(nearby)) { best = idx; break }
+  let best = occurrences[0]
+  if (occurrences.length > 1 && discipline) {
+    const isNoGi = discipline === 'nogi'
+    const isGi = discipline === 'gi'
+    for (const occ of occurrences) {
+      const nearCat = categories.filter(c => c.pos < occ.pos).pop()
+      if (!nearCat) continue
+      const c = nearCat.cat.toLowerCase()
+      if (isNoGi && /no.?gi/i.test(c)) { best = occ; break }
+      if (isGi && /\bgi\b/.test(c) && !/no.?gi/i.test(c)) { best = occ; break }
     }
   }
 
-  const win = lines.slice(Math.max(0, best - 5), best + 3).join(' ')
-  const times = [...win.matchAll(/\b([6-9]:\d{2}|[01]\d:\d{2}|2[0-3]:\d{2})\b/g)]
-  return times.length ? times[times.length - 1][1] : null
-}
-
-function extractMatchRef(text, fighterName) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const nameLower = fighterName.toLowerCase()
-  const idxs = lines.reduce((a, l, i) => {
-    if (l.toLowerCase().includes(nameLower) && !l.startsWith('http') && !l.startsWith('*') && !l.startsWith('!')) a.push(i)
-    return a
-  }, [])
-  if (!idxs.length) return null
-  const last = idxs[idxs.length - 1]
-  for (let i = last; i >= Math.max(0, last - 10); i--) {
-    const m = lines[i].match(/^(\d+)\s*-\s*(\d+)$/)
-    if (m) return `${m[1]}-${m[2]}`
+  const nearNum = numbers.filter(n => n.pos < best.pos).pop()
+  const nearEta = etas.filter(e => e.pos < best.pos).pop()
+  return {
+    time: nearEta?.time || null,
+    matchRef: nearNum?.ref || null,
   }
-  return null
 }
 
 async function sendEmail(emailConfig, fighterName, changes) {
@@ -97,37 +83,45 @@ export default async function handler(req) {
 
     const { fighters, emailConfig } = typeof raw === 'string' ? JSON.parse(raw) : raw
     const prevState = await redis.get('cf:state')
-    const state = (prevState ? (typeof prevState === 'string' ? JSON.parse(prevState) : prevState) : {})
+    const state = prevState ? (typeof prevState === 'string' ? JSON.parse(prevState) : prevState) : {}
     const newState = { ...state }
     const log = []
 
     for (const fighter of fighters) {
       try {
-        const bracketText = await fetchJina(fighter.bracketUrl)
-        const matchRef = extractMatchRef(bracketText, fighter.name)
+        const matchlistUrl = deriveMatchlistUrl(fighter)
+        if (!matchlistUrl) { log.push(`${fighter.name}: no URL`); continue }
 
-        const matchlistUrl = buildMatchlistUrl(fighter.bracketUrl, fighter.name, fighter.matchlistUrl)
-        let time = null
-        if (matchlistUrl) {
-          const matchlistText = await fetchJina(matchlistUrl)
-          // Extract category from bracket
-          const catLine = bracketText.split('\n').map(l => l.trim()).find(l => {
-            if (l.startsWith('*') || l.startsWith('[') || l.startsWith('!') || l.includes('http')) return false
-            if (l.length > 100) return false
-            return /\b(no.?gi|gi|white|blue|purple|brown|black|adult|master|juvenile)\b/i.test(l)
-          })
-          const category = catLine ? catLine.replace(/^#+\s*/, '').trim() : null
-          time = extractTime(matchlistText, fighter.name, category)
-        }
+        const html = await fetchMatchlist(matchlistUrl)
+        const data = parseMatchlist(html, fighter.name, fighter.discipline)
+        if (!data) { log.push(`${fighter.name}: not found`); continue }
 
+        const { time, matchRef } = data
         const key = fighter.id
         const prev = state[key] || {}
         const changes = []
 
+        // Detect new fight (fighter advanced in bracket)
+        if (prev.matchRef && matchRef && prev.matchRef !== matchRef)
+          changes.push(`Nuevo combate: ${prev.matchRef} → ${matchRef}`)
+
+        // Detect time change
         if (prev.time && time && prev.time !== time)
           changes.push(`Hora: ${prev.time} → ${time}`)
-        if (prev.matchRef && matchRef && prev.matchRef !== matchRef)
-          changes.push(`Combate: ${prev.matchRef} → ${matchRef} (nuevo combate!)`)
+
+        // Detect <10 min alert (only once per fight)
+        const alertKey = `${key}-${matchRef || time}`
+        if (time && !state[`alerted:${alertKey}`]) {
+          const [h, m] = time.split(':').map(Number)
+          const now = new Date()
+          const fight = new Date(now)
+          fight.setHours(h, m, 0, 0)
+          const mins = Math.round((fight - now) / 60000)
+          if (mins >= 0 && mins < 10) {
+            changes.push(`⚡ COMBATE EN MENOS DE 10 MIN — Mat ${data.mat || '?'} a las ${time}`)
+            newState[`alerted:${alertKey}`] = true
+          }
+        }
 
         if (changes.length) {
           await sendEmail(emailConfig, fighter.name, changes.join('\n'))
@@ -141,7 +135,6 @@ export default async function handler(req) {
     }
 
     await redis.set('cf:state', JSON.stringify(newState))
-
     return new Response(JSON.stringify({ ok: true, checked: fighters.length, changes: log }), {
       headers: { 'Content-Type': 'application/json' }
     })
