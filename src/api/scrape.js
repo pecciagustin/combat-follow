@@ -342,7 +342,7 @@ async function scrapeOneFighter(fighter) {
   // Always try to get the scheduled time from the matchlist search URL
   if (data && data.status !== 'notfound' && data.status !== 'error') {
     try {
-      const matchlistTime = await fetchMatchlistTime(fighter.bracketUrl, fighter.name, fighter.matchlistUrl)
+      const matchlistTime = await fetchMatchlistTime(fighter.bracketUrl, fighter.name, fighter.matchlistUrl, data.category)
       if (matchlistTime) data.time = matchlistTime
     } catch { /* ignore — time stays empty */ }
   }
@@ -360,7 +360,7 @@ function buildMatchlistUrl(bracketUrl, fighterName) {
   return `${base}/schedule/matchlist?search=${searchName}&club=&catid=0&mat=&country=`
 }
 
-async function fetchMatchlistTime(bracketUrl, fighterName, manualMatchlistUrl) {
+async function fetchMatchlistTime(bracketUrl, fighterName, manualMatchlistUrl, bracketCategory) {
   const url = manualMatchlistUrl || buildMatchlistUrl(bracketUrl, fighterName)
   if (!url) return null
   const text = await fetchPageText(url)
@@ -371,12 +371,35 @@ async function fetchMatchlistTime(bracketUrl, fighterName, manualMatchlistUrl) {
   const contentStart = lines.findIndex(l => l.startsWith('Markdown Content'))
   const searchFrom = contentStart >= 0 ? contentStart : 0
 
-  // Find the fighter name in the match content (not the URL header)
-  const idx = lines.findIndex((l, i) => i > searchFrom && l.toLowerCase().includes(nameLower) && !l.startsWith('http') && !l.startsWith('*'))
-  if (idx === -1) return null
+  // Find ALL occurrences of the fighter name in the match content
+  const allIdxs = lines.reduce((acc, l, i) => {
+    if (i > searchFrom && l.toLowerCase().includes(nameLower) && !l.startsWith('http') && !l.startsWith('*'))
+      acc.push(i)
+    return acc
+  }, [])
+
+  if (allIdxs.length === 0) return null
+
+  // If fighter appears multiple times (multiple categories), pick the one
+  // whose nearby category line best matches the bracket category
+  let bestIdx = allIdxs[0]
+  if (allIdxs.length > 1 && bracketCategory) {
+    const catLower = bracketCategory.toLowerCase()
+    const isGi = /\bgi\b/.test(catLower) && !/no.gi/i.test(catLower)
+    const isNoGi = /no.?gi/i.test(catLower)
+
+    for (const idx of allIdxs) {
+      const nearby = lines.slice(Math.max(0, idx - 6), idx).join(' ').toLowerCase()
+      if (isNoGi && /no.?gi/i.test(nearby)) { bestIdx = idx; break }
+      if (isGi && /\bgi\b/.test(nearby) && !/no.?gi/i.test(nearby)) { bestIdx = idx; break }
+      // Fallback: match on weight/category keywords
+      const kgMatch = catLower.match(/\d+\s*kg/)
+      if (kgMatch && nearby.includes(kgMatch[0])) { bestIdx = idx; break }
+    }
+  }
 
   // Look in surrounding lines for a time (HH:MM) — take the LAST one (closest to fighter)
-  const window = lines.slice(Math.max(0, idx - 5), idx + 3).join(' ')
+  const window = lines.slice(Math.max(0, bestIdx - 5), bestIdx + 3).join(' ')
   const allTimes = [...window.matchAll(/\b([6-9]:\d{2}|[01]\d:\d{2}|2[0-3]:\d{2})\b/g)]
   return allTimes.length > 0 ? allTimes[allTimes.length - 1][1] : null
 }
