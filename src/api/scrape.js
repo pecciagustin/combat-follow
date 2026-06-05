@@ -402,16 +402,37 @@ async function fetchMatchlistTime(bracketUrl, fighterName, manualMatchlistUrl, b
   return allTimes.length > 0 ? allTimes[allTimes.length - 1][1] : null
 }
 
-export async function scrapeAllFighters(fighters) {
-  const results = await Promise.all(
-    fighters.map(async (fighter) => {
-      try {
-        const data = await scrapeOneFighter(fighter)
-        return { id: fighter.id, data, error: null }
-      } catch (err) {
-        return { id: fighter.id, data: null, error: err.message || 'Error fetching data' }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+async function scrapeWithRetry(fighter, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const data = await scrapeOneFighter(fighter)
+      return { id: fighter.id, data, error: null }
+    } catch (err) {
+      const is429 = err.message?.includes('429')
+      if (is429 && attempt < retries) {
+        await sleep(2000 * (attempt + 1)) // 2s, 4s backoff
+        continue
       }
-    })
-  )
+      return { id: fighter.id, data: null, error: err.message || 'Error fetching data' }
+    }
+  }
+}
+
+export async function scrapeAllFighters(fighters) {
+  const results = []
+  const BATCH_SIZE = 3
+  const BATCH_DELAY = 1500 // ms between batches
+
+  for (let i = 0; i < fighters.length; i += BATCH_SIZE) {
+    const batch = fighters.slice(i, i + BATCH_SIZE)
+    const batchResults = await Promise.all(batch.map((f) => scrapeWithRetry(f)))
+    results.push(...batchResults)
+    if (i + BATCH_SIZE < fighters.length) {
+      await sleep(BATCH_DELAY)
+    }
+  }
+
   return results
 }
