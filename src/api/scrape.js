@@ -1,8 +1,15 @@
 const JINA_BASE = 'https://r.jina.ai/'
 
+function jinaHeaders() {
+  const headers = { Accept: 'text/plain' }
+  const key = import.meta.env.VITE_JINA_API_KEY
+  if (key && key !== 'none') headers['Authorization'] = `Bearer ${key}`
+  return headers
+}
+
 async function fetchPageText(url, retries = 3) {
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(JINA_BASE + url, { headers: { Accept: 'text/plain' } })
+    const res = await fetch(JINA_BASE + url, { headers: jinaHeaders() })
     if (res.status === 429) {
       if (attempt < retries) { await new Promise(r => setTimeout(r, 4000 * (attempt + 1))); continue }
       throw new Error('Jina fetch failed: 429')
@@ -207,9 +214,9 @@ function parseBjjCompSystem(text, fighterName) {
 }
 
 async function fetchHtml(url) {
-  const res = await fetch(JINA_BASE + url, {
-    headers: { 'X-Return-Format': 'html' },
-  })
+  const headers = jinaHeaders()
+  headers['X-Return-Format'] = 'html'
+  const res = await fetch(JINA_BASE + url, { headers })
   if (!res.ok) throw new Error(`Jina fetch failed: ${res.status}`)
   return res.text()
 }
