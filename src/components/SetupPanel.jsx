@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner }) {
+export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner, onClearAll }) {
   const [name, setName] = useState('')
   const [matchlistUrl, setMatchlistUrl] = useState('')
   const [discipline, setDiscipline] = useState('')
@@ -106,6 +106,11 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div className="fighter-list-header">Luchadores ({fighters.length})</div>
+          {fighters.length > 0 && (
+            <button className="btn-danger" style={{ fontSize: 11, minHeight: 28, padding: '0 10px' }} onClick={onClearAll}>
+              Limpiar todo
+            </button>
+          )}
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={onShowScanner}>
               📷 Escanear QR

@@ -392,6 +392,11 @@ button:active {
   background: #1a1500;
 }
 
+.fighter-card.urgent {
+  border-color: var(--live);
+  background: #1a0000;
+}
+
 .fighter-card.live {
   border-color: var(--live);
 }

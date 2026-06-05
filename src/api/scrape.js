@@ -69,13 +69,9 @@ function parseMatchlistHtml(html, fighterName, discipline) {
   }
 }
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms))
-
 export async function scrapeAllFighters(fighters) {
-  const results = []
-
-  for (let i = 0; i < fighters.length; i++) {
-    const fighter = fighters[i]
+  // All matchlist fetches in parallel — direct browser fetch, no rate limiting
+  const results = await Promise.all(fighters.map(async (fighter) => {
     try {
       const matchlistUrl = fighter.matchlistUrl || fighter.bracketUrl
       if (!matchlistUrl) throw new Error('No matchlist URL configured')
@@ -84,20 +80,12 @@ export async function scrapeAllFighters(fighters) {
       const data = parseMatchlistHtml(text, fighter.name, fighter.discipline)
 
       if (data && (data.time || data.mat)) {
-        results.push({
-          id: fighter.id,
-          data: { ...data, athlete: fighter.name, status: 'upcoming', fights: [] },
-          error: null,
-        })
-      } else {
-        results.push({ id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null })
+        return { id: fighter.id, data: { ...data, athlete: fighter.name, status: 'upcoming', fights: [] }, error: null }
       }
+      return { id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null }
     } catch (err) {
-      results.push({ id: fighter.id, data: null, error: err.message || 'Error fetching data' })
+      return { id: fighter.id, data: null, error: err.message || 'Error fetching data' }
     }
-
-    if (i < fighters.length - 1) await sleep(300)
-  }
-
+  }))
   return results
 }

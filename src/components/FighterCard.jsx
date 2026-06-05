@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 const PLACEMENT_LABEL = { 1: '🥇 1er lugar', 2: '🥈 2do lugar', 3: '🥉 3er lugar' }
 
-export default function FighterCard({ fighter, matchData, isLoading, isChanged, onNoteChange }) {
+export default function FighterCard({ fighter, matchData, isLoading, isChanged, isUrgent, onNoteChange }) {
   const [expanded, setExpanded] = useState(false)
   const [treeOpen, setTreeOpen] = useState(false)
   const status = matchData?.status
@@ -10,18 +10,20 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged, 
   function getStatusBadge() {
     if (isLoading) return <span className="badge badge-loading">…</span>
     if (!matchData) return null
+    if (isUrgent) return <span className="badge badge-live">⚡ &lt;10 min</span>
     if (status === 'live') return <span className="badge badge-live">En vivo</span>
     if (status === 'upcoming') return <span className="badge badge-upcoming">Próximo</span>
     if (status === 'finished') return <span className="badge badge-finished">Finalizado</span>
-    if (status === 'notfound') return <span className="badge badge-notfound">Sin combate</span>
+    if (status === 'notfound') return <span className="badge badge-notfound">Sin asignar</span>
     if (status === 'error') return <span className="badge badge-error">Error</span>
     return null
   }
 
   const cardClass = [
     'fighter-card',
-    isChanged ? 'changed' : '',
-    status === 'live' && !isChanged ? 'live' : '',
+    isUrgent ? 'urgent' : '',
+    isChanged && !isUrgent ? 'changed' : '',
+    status === 'live' && !isChanged && !isUrgent ? 'live' : '',
   ].filter(Boolean).join(' ')
 
   const hasData = matchData && status !== 'notfound' && status !== 'error'
@@ -55,10 +57,13 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged, 
                   {matchData.fight && <> · #{matchData.fight}</>}
                 </div>
               )}
+              {matchData.category && (
+                <div className="card-mat-compact" style={{ opacity: 0.6 }}>{matchData.category}</div>
+              )}
             </>
           ) : (
             <div className="card-time-compact muted">
-              {isLoading ? '…' : '--:--'}
+              {isLoading ? '…' : status === 'notfound' ? 'Sin asignar' : '--:--'}
             </div>
           )}
         </div>

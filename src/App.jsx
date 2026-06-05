@@ -4,7 +4,7 @@ import SetupPanel from './components/SetupPanel'
 import FighterCard from './components/FighterCard'
 import ChangeLog from './components/ChangeLog'
 import { scrapeAllFighters } from './api/scrape'
-import { sendChangeAlert, sendLiveAlert } from './api/email'
+import { sendChangeAlert } from './api/email'
 import QRModal from './components/QRModal'
 import QRScanner from './components/QRScanner'
 
@@ -38,10 +38,18 @@ function saveFighters(fighters) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(fighters))
 }
 
-function vibrate(type) {
+function vibrate() {
   if (!navigator.vibrate) return
-  if (type === 'live') navigator.vibrate([300, 100, 300, 100, 300])
-  if (type === 'change') navigator.vibrate([200, 100, 200])
+  navigator.vibrate([300, 100, 300, 100, 300])
+}
+
+function minutesUntil(timeStr) {
+  if (!timeStr) return null
+  const now = new Date()
+  const [h, m] = timeStr.split(':').map(Number)
+  const fight = new Date(now)
+  fight.setHours(h, m, 0, 0)
+  return Math.round((fight - now) / 60000)
 }
 
 function gridClass(count) {
@@ -56,6 +64,8 @@ export default function App() {
   const [fighters, setFighters] = useState(loadFighters)
   const [matchMap, setMatchMap] = useState({})
   const [changedIds, setChangedIds] = useState(new Set())
+  const [urgentIds, setUrgentIds] = useState(new Set())
+  const [notifiedIds, setNotifiedIds] = useState(new Set())
   const [changelog, setChangelog] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
@@ -76,61 +86,42 @@ export default function App() {
     try {
       const results = await scrapeAllFighters(fighters)
       const now = new Date()
-      const nowStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      const newChangedIds = new Set()
-      const newEntries = []
+
+      const newUrgentIds = new Set()
 
       setMatchMap((prev) => {
         const next = { ...prev }
         results.forEach(({ id, data, error }) => {
-          if (error) {
-            next[id] = { status: 'error', message: error }
-            return
-          }
+          if (error) { next[id] = { status: 'error', message: error }; return }
           next[id] = data
-          const old = prevMatchRef.current[id]
-          if (old && data && data.status !== 'notfound') {
-            const fighter = fighters.find((f) => f.id === id)
-            const name = fighter?.name || id
-            if (old.time && data.time && old.time !== data.time) {
-              newChangedIds.add(id)
-              newEntries.push({ fighter: name, field: 'Hora', from: old.time, to: data.time, timestamp: nowStr })
-            }
-            if (old.mat && data.mat && old.mat !== data.mat) {
-              newChangedIds.add(id)
-              newEntries.push({ fighter: name, field: 'Mat', from: old.mat, to: data.mat, timestamp: nowStr })
-            }
-          }
         })
         prevMatchRef.current = { ...next }
         return next
       })
 
-      if (newChangedIds.size > 0) {
-        setChangedIds((prev) => new Set([...prev, ...newChangedIds]))
-        setChangelog((prev) => [...prev, ...newEntries])
-        vibrate('change')
-        // Group entries by fighter and send one email per fighter
-        const byFighter = {}
-        newEntries.forEach((e) => {
-          if (!byFighter[e.fighter]) byFighter[e.fighter] = []
-          byFighter[e.fighter].push(e)
-        })
-        Object.entries(byFighter).forEach(([name, changes]) => {
-          sendChangeAlert({ config: emailConfig, fighter: name, changes })
-        })
-      }
-
-      // Vibrate + email when any fighter goes live
+      // Check for fighters with <10 min until fight — alert once per fight
       results.forEach(({ id, data }) => {
-        const old = prevMatchRef.current[id]
-        if (data?.status === 'live' && old?.status !== 'live') {
-          vibrate('live')
-          const fighter = fighters.find((f) => f.id === id)
-          sendLiveAlert({ config: emailConfig, fighter: fighter?.name || id, matchData: data })
+        if (!data?.time || data.status === 'notfound') return
+        const mins = minutesUntil(data.time)
+        if (mins !== null && mins >= 0 && mins < 10) {
+          newUrgentIds.add(id)
+          // Send email only once per fight (track by id+fight ref)
+          const alertKey = `${id}-${data.fight || data.time}`
+          setNotifiedIds((prev) => {
+            if (prev.has(alertKey)) return prev
+            const fighter = fighters.find((f) => f.id === id)
+            vibrate()
+            sendChangeAlert({
+              config: emailConfig,
+              fighter: fighter?.name || id,
+              changes: [{ field: '⚡ COMBATE EN MENOS DE 10 MIN', from: `Mat ${data.mat} · Fight ${data.fight}`, to: data.time }],
+            })
+            return new Set([...prev, alertKey])
+          })
         }
       })
 
+      setUrgentIds(newUrgentIds)
       setLastUpdated(now)
     } catch (err) {
       console.error('Refresh error:', err)
@@ -176,6 +167,16 @@ export default function App() {
     if (fighters.length > 0) refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function clearAllFighters() {
+    if (!window.confirm('¿Eliminar todos los luchadores?')) return
+    setFighters([])
+    setMatchMap({})
+    setChangedIds(new Set())
+    setUrgentIds(new Set())
+    setNotifiedIds(new Set())
+    setChangelog([])
+  }
 
   function editFighter(id, updates) {
     setFighters((prev) => prev.map((f) => f.id === id ? { ...f, ...updates } : f))
@@ -301,6 +302,7 @@ export default function App() {
             setEmailConfig(cfg)
             localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(cfg))
           }}
+          onClearAll={clearAllFighters}
           onShowQR={() => setShowQR(true)}
           onShowScanner={() => setShowScanner(true)}
         />
@@ -352,6 +354,7 @@ export default function App() {
                     matchData={matchMap[fighter.id] ?? null}
                     isLoading={isLoading && !matchMap[fighter.id]}
                     isChanged={changedIds.has(fighter.id)}
+                    isUrgent={urgentIds.has(fighter.id)}
                     onNoteChange={(note) => updateNote(fighter.id, note)}
                   />
                 ))}
