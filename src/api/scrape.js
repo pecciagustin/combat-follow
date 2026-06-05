@@ -339,39 +339,22 @@ async function scrapeOneFighter(fighter) {
   const text = await fetchPageText(fighter.bracketUrl)
   const data = parseMatchData(text, fighter.name)
 
-  // Always try to get the scheduled time from the matchlist search URL
-  if (data && data.status !== 'notfound' && data.status !== 'error') {
-    try {
-      const matchlistTime = await fetchMatchlistTime(fighter.bracketUrl, fighter.name, fighter.matchlistUrl, data.category)
-      if (matchlistTime) data.time = matchlistTime
-    } catch { /* ignore — time stays empty */ }
-  }
-
+  // Time is injected later from the shared matchlist cache (see scrapeAllFighters)
   return data
 }
 
-function buildMatchlistUrl(bracketUrl, fighterName) {
+function buildMatchlistBaseUrl(bracketUrl) {
   // From: https://ajptour.com/en/event/1450/bracket/129306
-  // To:   https://ajptour.com/en/event/1450/schedule/matchlist?search=joeljoan
-  const m = bracketUrl.match(/(https?:\/\/[^/]+\/(?:[a-z]{2}\/)?event\/(\d+))/)
-  if (!m) return null
-  const base = m[1]
-  const searchName = encodeURIComponent(fighterName.split(' ')[0].toLowerCase())
-  return `${base}/schedule/matchlist?search=${searchName}&club=&catid=0&mat=&country=`
+  // To:   https://ajptour.com/en/event/1450/schedule/matchlist (no search — gets ALL matches)
+  const m = bracketUrl.match(/(https?:\/\/[^/]+\/(?:[a-z]{2}\/)?event\/\d+)/)
+  return m ? `${m[1]}/schedule/matchlist?search=&club=&catid=0&mat=&country=` : null
 }
 
-async function fetchMatchlistTime(bracketUrl, fighterName, manualMatchlistUrl, bracketCategory) {
-  const url = manualMatchlistUrl || buildMatchlistUrl(bracketUrl, fighterName)
-  if (!url) return null
-  const text = await fetchPageText(url)
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+function extractTimeFromMatchlistText(lines, fighterName, bracketCategory) {
   const nameLower = fighterName.toLowerCase()
-
-  // Skip header lines — find fighter name AFTER the "Markdown Content:" marker
   const contentStart = lines.findIndex(l => l.startsWith('Markdown Content'))
   const searchFrom = contentStart >= 0 ? contentStart : 0
 
-  // Find ALL occurrences of the fighter name in the match content
   const allIdxs = lines.reduce((acc, l, i) => {
     if (i > searchFrom && l.toLowerCase().includes(nameLower) && !l.startsWith('http') && !l.startsWith('*'))
       acc.push(i)
@@ -380,23 +363,18 @@ async function fetchMatchlistTime(bracketUrl, fighterName, manualMatchlistUrl, b
 
   if (allIdxs.length === 0) return null
 
-  // If fighter appears multiple times (multiple categories), pick the one
-  // whose nearby category line best matches the bracket category
   let bestIdx = allIdxs[0]
   if (allIdxs.length > 1 && bracketCategory) {
     const catLower = bracketCategory.toLowerCase()
     const isGi = /\bgi\b/.test(catLower) && !/no.?gi/i.test(catLower)
     const isNoGi = /no.?gi/i.test(catLower)
-
     for (const idx of allIdxs) {
-      // Look back up to 10 lines to capture the category header for this match entry
       const nearby = lines.slice(Math.max(0, idx - 10), idx).join(' ').toLowerCase()
       if (isNoGi && /no.?gi/i.test(nearby)) { bestIdx = idx; break }
       if (isGi && /\bgi\b/.test(nearby) && !/no.?gi/i.test(nearby)) { bestIdx = idx; break }
     }
   }
 
-  // Look in surrounding lines for a time (HH:MM) — take the LAST one (closest to fighter)
   const window = lines.slice(Math.max(0, bestIdx - 5), bestIdx + 3).join(' ')
   const allTimes = [...window.matchAll(/\b([6-9]:\d{2}|[01]\d:\d{2}|2[0-3]:\d{2})\b/g)]
   return allTimes.length > 0 ? allTimes[allTimes.length - 1][1] : null
@@ -404,34 +382,75 @@ async function fetchMatchlistTime(bracketUrl, fighterName, manualMatchlistUrl, b
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-async function scrapeWithRetry(fighter, retries = 2) {
+async function fetchWithRetry(url, options, retries = 3) {
   for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const data = await scrapeOneFighter(fighter)
-      return { id: fighter.id, data, error: null }
-    } catch (err) {
-      const is429 = err.message?.includes('429')
-      if (is429 && attempt < retries) {
-        await sleep(3000 * (attempt + 1)) // 3s, 6s backoff
-        continue
-      }
-      return { id: fighter.id, data: null, error: err.message || 'Error fetching data' }
+    const res = await fetch(url, options)
+    if (res.status === 429) {
+      if (attempt < retries) { await sleep(3000 * (attempt + 1)); continue }
+      throw new Error('Jina fetch failed: 429')
     }
+    if (!res.ok) throw new Error(`Jina fetch failed: ${res.status}`)
+    return res.text()
   }
 }
 
+// Override fetchPageText to use retry logic
+async function fetchPageTextWithRetry(url) {
+  return fetchWithRetry(JINA_BASE + url, { headers: { Accept: 'text/plain' } })
+}
+
 export async function scrapeAllFighters(fighters) {
+  // Step 1: Pre-fetch ONE matchlist per unique event (huge reduction in requests)
+  // Group fighters by their event base URL
+  const matchlistCache = new Map() // baseUrl -> lines[]
+  const uniqueMatchlistUrls = new Map() // baseUrl -> fighters who have a manual URL
+
+  for (const fighter of fighters) {
+    const manualUrl = fighter.matchlistUrl
+    const autoUrl = buildMatchlistBaseUrl(fighter.bracketUrl)
+    const key = manualUrl || autoUrl
+    if (key && !matchlistCache.has(key)) {
+      matchlistCache.set(key, null) // placeholder
+    }
+  }
+
+  // Fetch each unique matchlist sequentially with delay
+  const matchlistKeys = [...matchlistCache.keys()]
+  for (let i = 0; i < matchlistKeys.length; i++) {
+    const url = matchlistKeys[i]
+    try {
+      const text = await fetchPageTextWithRetry(url)
+      matchlistCache.set(url, text.split('\n').map(l => l.trim()).filter(Boolean))
+    } catch { matchlistCache.set(url, []) }
+    if (i < matchlistKeys.length - 1) await sleep(1500)
+  }
+
+  // Step 2: Fetch bracket pages in batches of 3 (only 1 request each now)
   const results = []
-  const BATCH_SIZE = 2
-  const BATCH_DELAY = 3000 // ms between batches
+  const BATCH_SIZE = 3
+  const BATCH_DELAY = 2000
 
   for (let i = 0; i < fighters.length; i += BATCH_SIZE) {
     const batch = fighters.slice(i, i + BATCH_SIZE)
-    const batchResults = await Promise.all(batch.map((f) => scrapeWithRetry(f)))
+    const batchResults = await Promise.all(batch.map(async (fighter) => {
+      try {
+        const data = await scrapeOneFighter(fighter)
+        // Inject time from cached matchlist
+        if (data && data.status !== 'notfound' && data.status !== 'error') {
+          const key = fighter.matchlistUrl || buildMatchlistBaseUrl(fighter.bracketUrl)
+          const lines = key ? matchlistCache.get(key) : null
+          if (lines?.length) {
+            const time = extractTimeFromMatchlistText(lines, fighter.name, data.category)
+            if (time) data.time = time
+          }
+        }
+        return { id: fighter.id, data, error: null }
+      } catch (err) {
+        return { id: fighter.id, data: null, error: err.message || 'Error fetching data' }
+      }
+    }))
     results.push(...batchResults)
-    if (i + BATCH_SIZE < fighters.length) {
-      await sleep(BATCH_DELAY)
-    }
+    if (i + BATCH_SIZE < fighters.length) await sleep(BATCH_DELAY)
   }
 
   return results
