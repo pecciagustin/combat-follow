@@ -385,16 +385,14 @@ async function fetchMatchlistTime(bracketUrl, fighterName, manualMatchlistUrl, b
   let bestIdx = allIdxs[0]
   if (allIdxs.length > 1 && bracketCategory) {
     const catLower = bracketCategory.toLowerCase()
-    const isGi = /\bgi\b/.test(catLower) && !/no.gi/i.test(catLower)
+    const isGi = /\bgi\b/.test(catLower) && !/no.?gi/i.test(catLower)
     const isNoGi = /no.?gi/i.test(catLower)
 
     for (const idx of allIdxs) {
-      const nearby = lines.slice(Math.max(0, idx - 6), idx).join(' ').toLowerCase()
+      // Look back up to 10 lines to capture the category header for this match entry
+      const nearby = lines.slice(Math.max(0, idx - 10), idx).join(' ').toLowerCase()
       if (isNoGi && /no.?gi/i.test(nearby)) { bestIdx = idx; break }
       if (isGi && /\bgi\b/.test(nearby) && !/no.?gi/i.test(nearby)) { bestIdx = idx; break }
-      // Fallback: match on weight/category keywords
-      const kgMatch = catLower.match(/\d+\s*kg/)
-      if (kgMatch && nearby.includes(kgMatch[0])) { bestIdx = idx; break }
     }
   }
 
