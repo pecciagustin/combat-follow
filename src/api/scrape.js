@@ -16,7 +16,6 @@ function parseBjjCompSystem(html, fighterName) {
   let fm
   while ((fm = fightRe.exec(html)) !== null) {
     const fightNum = fm[1], mat = fm[2]
-    // Convert time: "Fri 05/29 at 04:27 PM" → "16:27"
     const rawTime = fm[3].trim()
     const t = rawTime.match(/at\s+(\d+):(\d+)\s*(AM|PM)/i)
     let time = null
@@ -27,28 +26,30 @@ function parseBjjCompSystem(html, fighterName) {
       if (period === 'AM' && h === 12) h = 0
       time = `${String(h).padStart(2, '0')}:${t[2]}`
     }
-    // Get names in this fight block
     const blockStart = fm.index
     const blockEnd = fightRe.lastIndex + 1500
     const block = html.slice(blockStart, Math.min(html.length, blockEnd))
     const names = [...block.matchAll(/class='match-card__competitor-name'>([^<]+)</g)]
       .map(m => m[1].trim())
-      .filter((n, i, arr) => arr.indexOf(n) === i) // unique
-    fightBlocks.push({ fightNum, mat, time, names })
+      .filter((n, i, arr) => arr.indexOf(n) === i)
+    // Detect if fight is decided: loser gets 'match-competitor--loser' class
+    const isDecided = block.includes('match-competitor--loser')
+    fightBlocks.push({ fightNum, mat, time, names, isDecided })
   }
 
-  // Find fights containing this fighter (not as "3+ ghost" from bracket preview)
+  // Find this fighter's fights (exclude "ghost" entries with 3+ names)
   const fighterFights = fightBlocks
     .filter(b => b.names.length <= 2 && b.names.some(n => n.toLowerCase().includes(nameLower)))
-    .sort((a, b) => parseInt(a.fightNum) - parseInt(b.fightNum)) // chronological order
+    .sort((a, b) => parseInt(a.fightNum) - parseInt(b.fightNum))
 
   if (!fighterFights.length) return null
 
-  // Prefer fight with upcoming time, else last (most advanced = highest fight number)
-  const withTime = fighterFights.filter(b => b.time)
-  const best = withTime.length
-    ? withTime[withTime.length - 1]   // last upcoming = most advanced with time
-    : fighterFights[fighterFights.length - 1] // most advanced overall
+  // Pick next fight: first undecided fight (chronological order)
+  // If all decided (fighter won all), pick last one
+  const undecided = fighterFights.filter(b => !b.isDecided)
+  const best = undecided.length
+    ? undecided[0]                              // next fight to happen
+    : fighterFights[fighterFights.length - 1]  // all done, show last
 
   const opponent = best.names.find(n => !n.toLowerCase().includes(nameLower)) || null
 
