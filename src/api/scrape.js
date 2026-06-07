@@ -1,8 +1,75 @@
 const PROXY_BASE = '/api/fetch?url='
 
-// Matchlist pages support CORS — fetch directly from browser, no proxy/Jina needed
+// These pages can be fetched directly from the browser
 function isDirectFetchable(url) {
-  return url.includes('/schedule/matchlist')
+  return url.includes('/schedule/matchlist') || url.includes('bjjcompsystem.com')
+}
+
+// ── BJJ Comp System parser (IBJJF) ────────────────────
+// Fetched directly — server-side rendered, no Cloudflare issues
+function parseBjjCompSystem(html, fighterName) {
+  const nameLower = fighterName.toLowerCase()
+
+  // Extract all fights with their data
+  const fightBlocks = []
+  const fightRe = /FIGHT\s+(\d+):<\/span>\s*Mat\s+(\d+)<\/div>\s*<div[^>]*>([^<]+)<\/div>/g
+  let fm
+  while ((fm = fightRe.exec(html)) !== null) {
+    const fightNum = fm[1], mat = fm[2]
+    // Convert time: "Fri 05/29 at 04:27 PM" → "16:27"
+    const rawTime = fm[3].trim()
+    const t = rawTime.match(/at\s+(\d+):(\d+)\s*(AM|PM)/i)
+    let time = null
+    if (t) {
+      let h = parseInt(t[1])
+      const period = t[3].toUpperCase()
+      if (period === 'PM' && h !== 12) h += 12
+      if (period === 'AM' && h === 12) h = 0
+      time = `${String(h).padStart(2, '0')}:${t[2]}`
+    }
+    // Get names in this fight block
+    const blockStart = fm.index
+    const blockEnd = fightRe.lastIndex + 1500
+    const block = html.slice(blockStart, Math.min(html.length, blockEnd))
+    const names = [...block.matchAll(/class='match-card__competitor-name'>([^<]+)</g)]
+      .map(m => m[1].trim())
+      .filter((n, i, arr) => arr.indexOf(n) === i) // unique
+    fightBlocks.push({ fightNum, mat, time, names })
+  }
+
+  // Find fights containing this fighter (not as "3+ ghost" from bracket preview)
+  const fighterFights = fightBlocks
+    .filter(b => b.names.length <= 2 && b.names.some(n => n.toLowerCase().includes(nameLower)))
+    .sort((a, b) => parseInt(a.fightNum) - parseInt(b.fightNum)) // chronological order
+
+  if (!fighterFights.length) return null
+
+  // Prefer fight with upcoming time, else last (most advanced = highest fight number)
+  const withTime = fighterFights.filter(b => b.time)
+  const best = withTime.length
+    ? withTime[withTime.length - 1]   // last upcoming = most advanced with time
+    : fighterFights[fighterFights.length - 1] // most advanced overall
+
+  const opponent = best.names.find(n => !n.toLowerCase().includes(nameLower)) || null
+
+  // Category from page title
+  const catMatch = html.match(/tournament-category__title[^>]*>\s*([^<]+)/)
+  const category = catMatch ? catMatch[1].trim() : null
+
+  // Placement from results table
+  let status = 'upcoming'
+  const rankMatch = html.match(new RegExp(`<td>(\\d+)</td>\\s*<td><a[^>]*>${fighterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'))
+  if (rankMatch) status = 'finished'
+
+  return {
+    time: best.time,
+    mat: best.mat,
+    fight: best.fightNum,
+    opponent,
+    category,
+    status,
+    fights: [],
+  }
 }
 
 async function fetchPageText(url, retries = 3) {
@@ -111,9 +178,22 @@ function deriveMatchlistUrl(fighter) {
 }
 
 export async function scrapeAllFighters(fighters) {
-  // All matchlist fetches in parallel — direct browser fetch, no rate limiting
+  // All fetches in parallel — direct browser fetch, no rate limiting
   const results = await Promise.all(fighters.map(async (fighter) => {
     try {
+      const url = fighter.matchlistUrl || fighter.bracketUrl || ''
+
+      // IBJJF (bjjcompsystem) — bracket page parsed directly
+      if (url.includes('bjjcompsystem.com')) {
+        const html = await fetchPageText(url)
+        const data = parseBjjCompSystem(html, fighter.name)
+        if (data && (data.time || data.mat)) {
+          return { id: fighter.id, data: { ...data, athlete: fighter.name }, error: null }
+        }
+        return { id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null }
+      }
+
+      // AJP / Smoothcomp — matchlist page
       const matchlistUrl = deriveMatchlistUrl(fighter)
       if (!matchlistUrl) throw new Error('No matchlist URL configured')
 
