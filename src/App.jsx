@@ -3,7 +3,6 @@ import Header from './components/Header'
 import SetupPanel from './components/SetupPanel'
 import FighterCard from './components/FighterCard'
 import { scrapeAllFighters } from './api/scrape'
-import { sendChangeAlert } from './api/email'
 import QRModal from './components/QRModal'
 import QRScanner from './components/QRScanner'
 
@@ -63,7 +62,6 @@ export default function App() {
   const [fighters, setFighters] = useState(loadFighters)
   const [matchMap, setMatchMap] = useState({})
   const [urgentIds, setUrgentIds] = useState(new Set())
-  const [notifiedIds, setNotifiedIds] = useState(new Set())
   const [isLoading, setIsLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [intervalSec, setIntervalSec] = useState(120)
@@ -97,25 +95,13 @@ export default function App() {
         return next
       })
 
-      // Check for fighters with <10 min until fight — alert once per fight
+      // Mark urgent (red) when <10 min — visual only, email handled by server cron
       results.forEach(({ id, data }) => {
         if (!data?.time || data.status === 'notfound') return
         const mins = minutesUntil(data.time)
         if (mins !== null && mins >= 0 && mins < 10) {
           newUrgentIds.add(id)
-          // Send email only once per fight (track by id+fight ref)
-          const alertKey = `${id}-${data.fight || data.time}`
-          setNotifiedIds((prev) => {
-            if (prev.has(alertKey)) return prev
-            const fighter = fighters.find((f) => f.id === id)
-            vibrate()
-            sendChangeAlert({
-              config: emailConfig,
-              fighter: fighter?.name || id,
-              changes: [{ field: '⚡ COMBATE EN MENOS DE 10 MIN', from: `Mat ${data.mat} · Fight ${data.fight}`, to: data.time }],
-            })
-            return new Set([...prev, alertKey])
-          })
+          vibrate()
         }
       })
 
@@ -172,7 +158,6 @@ export default function App() {
     setFighters([])
     setMatchMap({})
     setUrgentIds(new Set())
-    setNotifiedIds(new Set())
   }
 
   function editFighter(id, updates) {
