@@ -37,19 +37,28 @@ function parseMatchlistHtml(html, fighterName, discipline) {
   const fighterOccurrences = participants.filter(p => p.name.toLowerCase().includes(nameLower))
   if (!fighterOccurrences.length) return null
 
-  // If fighter appears in multiple categories (GI + NoGi), pick by discipline
-  let best = fighterOccurrences[0]
+  // Filter by discipline (GI/NoGi) first if needed
+  let candidates = fighterOccurrences
   if (fighterOccurrences.length > 1 && discipline) {
     const isNoGi = discipline === 'nogi'
     const isGi   = discipline === 'gi'
-    for (const occ of fighterOccurrences) {
+    const filtered = fighterOccurrences.filter(occ => {
       const nearCat = categories.filter(c => c.pos < occ.pos).pop()
-      if (!nearCat) continue
+      if (!nearCat) return false
       const c = nearCat.cat.toLowerCase()
-      if (isNoGi && /no.?gi/i.test(c))                        { best = occ; break }
-      if (isGi   && /\bgi\b/.test(c) && !/no.?gi/i.test(c))  { best = occ; break }
-    }
+      if (isNoGi) return /no.?gi/i.test(c)
+      if (isGi)   return /\bgi\b/.test(c) && !/no.?gi/i.test(c)
+      return true
+    })
+    if (filtered.length) candidates = filtered
   }
+
+  // Among candidates: prefer the one with an upcoming ETA (time assigned)
+  // If none have an ETA, take the LAST one (most advanced in tournament)
+  const withEta = candidates.filter(occ => etas.some(e => e.pos < occ.pos && e.pos > (numbers.filter(n => n.pos < occ.pos).pop()?.pos || 0)))
+  const best = withEta.length
+    ? withEta[withEta.length - 1]   // last upcoming match
+    : candidates[candidates.length - 1] // last match overall (most advanced)
 
   const nearNum     = numbers.filter(n => n.pos < best.pos).pop()
   const nearEta     = etas.filter(e => e.pos < best.pos).pop()

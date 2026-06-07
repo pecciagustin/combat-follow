@@ -31,18 +31,25 @@ function parseMatchlist(html, fighterName, discipline) {
   const occurrences = participants.filter(p => p.name.toLowerCase().includes(nameLower))
   if (!occurrences.length) return null
 
-  let best = occurrences[0]
+  let candidates = occurrences
   if (occurrences.length > 1 && discipline) {
     const isNoGi = discipline === 'nogi'
     const isGi = discipline === 'gi'
-    for (const occ of occurrences) {
+    const filtered = occurrences.filter(occ => {
       const nearCat = categories.filter(c => c.pos < occ.pos).pop()
-      if (!nearCat) continue
+      if (!nearCat) return false
       const c = nearCat.cat.toLowerCase()
-      if (isNoGi && /no.?gi/i.test(c)) { best = occ; break }
-      if (isGi && /\bgi\b/.test(c) && !/no.?gi/i.test(c)) { best = occ; break }
-    }
+      if (isNoGi) return /no.?gi/i.test(c)
+      if (isGi)   return /\bgi\b/.test(c) && !/no.?gi/i.test(c)
+      return true
+    })
+    if (filtered.length) candidates = filtered
   }
+
+  const withEta = candidates.filter(occ => etas.some(e => e.pos < occ.pos && e.pos > (numbers.filter(n => n.pos < occ.pos).pop()?.pos || 0)))
+  const best = withEta.length
+    ? withEta[withEta.length - 1]
+    : candidates[candidates.length - 1]
 
   const nearNum = numbers.filter(n => n.pos < best.pos).pop()
   const nearEta = etas.filter(e => e.pos < best.pos).pop()
