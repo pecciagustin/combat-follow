@@ -235,8 +235,13 @@ export default function App() {
 
   // Sort fighters by next match time (earliest first, no-time goes to bottom)
   const sortedFighters = [...fighters].sort((a, b) => {
-    const tA = matchMap[a.id]?.time
-    const tB = matchMap[b.id]?.time
+    const dA = matchMap[a.id]
+    const dB = matchMap[b.id]
+    const liveA = dA?.status === 'live' ? 0 : 1
+    const liveB = dB?.status === 'live' ? 0 : 1
+    if (liveA !== liveB) return liveA - liveB  // live always first
+    const tA = dA?.time
+    const tB = dB?.time
     if (tA && tB) return tA.localeCompare(tB) || a.name.localeCompare(b.name)
     if (tA) return -1
     if (tB) return 1
