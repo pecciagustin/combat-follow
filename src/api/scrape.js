@@ -31,6 +31,8 @@ function parseMatchlistHtml(html, fighterName, discipline) {
 
   const numbers      = [...html.matchAll(/<div class="number">([^<]+)<\/div>/g)].map(m => ({ pos: m.index, ref: m[1].trim() }))
   const etas         = [...html.matchAll(/class="eta[^"]*">(\d{1,2}:\d{2})<\/div>/g)].map(m => ({ pos: m.index, time: m[1] }))
+  const runningPos   = [...html.matchAll(/class="eta[^"]*">Running<\/div>/gi)].map(m => m.index)
+  const finishedPos  = [...html.matchAll(/class="eta[^"]*">Finished<\/div>/gi)].map(m => m.index)
   const participants = [...html.matchAll(/class="participant[^"]*">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, name: m[1].trim() }))
   const categories   = [...html.matchAll(/class="category-row">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, cat: m[1].trim() }))
 
@@ -55,10 +57,22 @@ function parseMatchlistHtml(html, fighterName, discipline) {
 
   // Among candidates: prefer the one with an upcoming ETA (time assigned)
   // If none have an ETA, take the LAST one (most advanced in tournament)
-  const withEta = candidates.filter(occ => etas.some(e => e.pos < occ.pos && e.pos > (numbers.filter(n => n.pos < occ.pos).pop()?.pos || 0)))
-  const best = withEta.length
-    ? withEta[withEta.length - 1]   // last upcoming match
-    : candidates[candidates.length - 1] // last match overall (most advanced)
+  // Priority: Running > has ETA (upcoming) > last match overall
+  const isRunning = occ => {
+    const nearNum = numbers.filter(n => n.pos < occ.pos).pop()
+    return runningPos.some(p => p < occ.pos && p > (nearNum?.pos || 0))
+  }
+  const isFinished = occ => {
+    const nearNum = numbers.filter(n => n.pos < occ.pos).pop()
+    return finishedPos.some(p => p < occ.pos && p > (nearNum?.pos || 0))
+  }
+  const withRunning = candidates.filter(isRunning)
+  const withEta = candidates.filter(occ => !isFinished(occ) && !isRunning(occ) && etas.some(e => e.pos < occ.pos && e.pos > (numbers.filter(n => n.pos < occ.pos).pop()?.pos || 0)))
+  const best = withRunning.length
+    ? withRunning[withRunning.length - 1]  // running match = highest priority
+    : withEta.length
+    ? withEta[withEta.length - 1]          // last upcoming match with time
+    : candidates[candidates.length - 1]    // last match overall (most advanced)
 
   const nearNum     = numbers.filter(n => n.pos < best.pos).pop()
   const nearEta     = etas.filter(e => e.pos < best.pos).pop()
@@ -69,12 +83,15 @@ function parseMatchlistHtml(html, fighterName, discipline) {
   // Extract category from nearest category-row
   const nearCat = categories.filter(c => c.pos < best.pos).pop()
 
+  const status = isRunning(best) ? 'live' : isFinished(best) ? 'finished' : 'upcoming'
+
   return {
-    time:     nearEta?.time || null,
+    time:     nearEta?.time || (isRunning(best) ? 'En curso' : null),
     mat:      nearNum ? nearNum.ref.split('-')[0] : null,
     fight:    nearNum ? nearNum.ref.split('-')[1] : null,
     opponent: opponent?.name || null,
     category: nearCat?.cat?.replace(/\s*\(Day \d+\)/i, '').replace(/&#039;/g, "'").replace(/&amp;/g, '&').trim() || null,
+    status,
   }
 }
 
@@ -104,7 +121,7 @@ export async function scrapeAllFighters(fighters) {
       const data = parseMatchlistHtml(text, fighter.name, fighter.discipline)
 
       if (data && (data.time || data.mat)) {
-        return { id: fighter.id, data: { ...data, athlete: fighter.name, status: 'upcoming', fights: [] }, error: null }
+        return { id: fighter.id, data: { ...data, athlete: fighter.name, status: data.status || 'upcoming', fights: [] }, error: null }
       }
       return { id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null }
     } catch (err) {
