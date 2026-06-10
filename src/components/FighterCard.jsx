@@ -16,7 +16,7 @@ function FightTrackCard({ fighter, matchData, isLoading, isUrgent, onNoteChange 
     if (status === 'live') return <span className="badge badge-live">En vivo</span>
     if (status === 'finished') return <span className="badge badge-finished">Finalizado</span>
     if (status === 'upcoming' && hasTime) return <span className="badge badge-upcoming">Próximo</span>
-    if (status === 'notfound') return <span className="badge badge-notfound">Sin asignar</span>
+    if (status === 'notfound') return <span className="badge badge-notfound">Pendiente</span>
     if (status === 'error') return <span className="badge badge-error">Error</span>
     return null
   }
@@ -78,7 +78,7 @@ function FightTrackCard({ fighter, matchData, isLoading, isUrgent, onNoteChange 
         <div className="card-detail">
           {isLoading && <div className="card-message">Cargando datos…</div>}
           {!isLoading && status === 'error' && <div className="card-message error">{matchData?.message || 'Error al obtener datos'}</div>}
-          {!isLoading && status === 'notfound' && <div className="card-message">Combate no encontrado en la página</div>}
+          {!isLoading && status === 'notfound' && <div className="card-message">Esperando que se definan los peleadores…</div>}
           {!isLoading && !matchData && <div className="card-message">Presiona ↻ para actualizar</div>}
           {!isLoading && matchData && status !== 'error' && status !== 'notfound' && (
             <>
