@@ -178,13 +178,101 @@ function deriveMatchlistUrl(fighter) {
   return url // fallback
 }
 
+// ── Fight-by-coordinates parser (AJP/Smoothcomp) ────────
+// Finds a specific mat-fight slot (e.g. "3-42") and returns whoever is assigned + time
+function parseFightByCoords(html, mat, fightNum) {
+  const ref = `${mat}-${fightNum}`
+  const numbers      = [...html.matchAll(/<div class="number">([^<]+)<\/div>/g)].map(m => ({ pos: m.index, ref: m[1].trim() }))
+  const etas         = [...html.matchAll(/class="eta[^"]*">(\d{1,2}:\d{2})<\/div>/g)].map(m => ({ pos: m.index, time: m[1] }))
+  const runningPos   = [...html.matchAll(/class="eta[^"]*">Running<\/div>/gi)].map(m => m.index)
+  const finishedPos  = [...html.matchAll(/class="eta[^"]*">Finished<\/div>/gi)].map(m => m.index)
+  const participants = [...html.matchAll(/class="participant[^"]*">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, name: m[1].trim() }))
+  const categories   = [...html.matchAll(/class="category-row">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, cat: m[1].trim() }))
+
+  const slot = numbers.find(n => n.ref === ref)
+  if (!slot) return null
+
+  const nextSlot = numbers.find(n => n.pos > slot.pos)
+  const slotEnd = nextSlot?.pos ?? html.length
+
+  const slotParticipants = participants.filter(p => p.pos > slot.pos && p.pos < slotEnd)
+  const nearEta = etas.filter(e => e.pos > slot.pos && e.pos < slotEnd)[0]
+    || etas.filter(e => e.pos < slot.pos).pop()
+
+  const isRunning = runningPos.some(p => p > slot.pos && p < slotEnd)
+  const isFinished = finishedPos.some(p => p > slot.pos && p < slotEnd)
+  const nearCat = categories.filter(c => c.pos < slot.pos).pop()
+
+  const status = isRunning ? 'live' : isFinished ? 'finished' : 'upcoming'
+
+  return {
+    time: nearEta?.time || (isRunning ? 'En curso' : null),
+    mat,
+    fight: fightNum,
+    fighters: slotParticipants.map(p => p.name).filter(Boolean),
+    category: nearCat?.cat?.replace(/\s*\(Day \d+\)/i, '').replace(/&#039;/g, "'").replace(/&amp;/g, '&').trim() || null,
+    status,
+  }
+}
+
+// ── Fight-by-coordinates parser (bjjcompsystem) ──────────
+function parseBjjFightByCoords(html, mat, fightNum) {
+  const fightRe = /FIGHT\s+(\d+):<\/span>\s*Mat\s+(\d+)<\/div>\s*<div[^>]*>([^<]+)<\/div>/g
+  let fm
+  while ((fm = fightRe.exec(html)) !== null) {
+    if (fm[1] !== String(fightNum) || fm[2] !== String(mat)) continue
+
+    const rawTime = fm[3].trim()
+    const t = rawTime.match(/at\s+(\d+):(\d+)\s*(AM|PM)/i)
+    let time = null
+    if (t) {
+      let h = parseInt(t[1])
+      const period = t[3].toUpperCase()
+      if (period === 'PM' && h !== 12) h += 12
+      if (period === 'AM' && h === 12) h = 0
+      time = `${String(h).padStart(2, '0')}:${t[2]}`
+    }
+
+    const blockStart = fm.index
+    const block = html.slice(blockStart, Math.min(html.length, blockStart + 1500))
+    const names = [...block.matchAll(/class='match-card__competitor-name'>([^<]+)</g)]
+      .map(m => m[1].trim())
+      .filter((n, i, arr) => arr.indexOf(n) === i)
+
+    const isDecided = block.includes('match-competitor--loser')
+    const catMatch = html.match(/tournament-category__title[^>]*>\s*([^<]+)/)
+
+    return {
+      time,
+      mat: String(mat),
+      fight: String(fightNum),
+      fighters: names,
+      category: catMatch ? catMatch[1].trim() : null,
+      status: isDecided ? 'finished' : time ? 'upcoming' : 'upcoming',
+    }
+  }
+  return null
+}
+
 export async function scrapeAllFighters(fighters) {
   // All fetches in parallel — direct browser fetch, no rate limiting
   const results = await Promise.all(fighters.map(async (fighter) => {
     try {
       const url = fighter.matchlistUrl || fighter.bracketUrl || ''
 
-      // IBJJF (bjjcompsystem) — bracket page parsed directly
+      // ── Fight-by-coordinates mode ──────────────────────
+      if (fighter.trackMode === 'fight') {
+        const html = await fetchPageText(url)
+        const data = url.includes('bjjcompsystem.com')
+          ? parseBjjFightByCoords(html, fighter.mat, fighter.fightNum)
+          : parseFightByCoords(html, fighter.mat, fighter.fightNum)
+        if (data) {
+          return { id: fighter.id, data: { ...data, trackMode: 'fight' }, error: null }
+        }
+        return { id: fighter.id, data: { trackMode: 'fight', mat: fighter.mat, fight: fighter.fightNum, fighters: [], status: 'notfound' }, error: null }
+      }
+
+      // ── IBJJF (bjjcompsystem) ─────────────────────────
       if (url.includes('bjjcompsystem.com')) {
         const html = await fetchPageText(url)
         const data = parseBjjCompSystem(html, fighter.name)
@@ -194,7 +282,7 @@ export async function scrapeAllFighters(fighters) {
         return { id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null }
       }
 
-      // AJP / Smoothcomp — matchlist page
+      // ── AJP / Smoothcomp ─────────────────────────────
       const matchlistUrl = deriveMatchlistUrl(fighter)
       if (!matchlistUrl) throw new Error('No matchlist URL configured')
 
