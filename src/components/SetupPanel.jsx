@@ -23,6 +23,9 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
   const [editName, setEditName] = useState('')
   const [editMatchlistUrl, setEditMatchlistUrl] = useState('')
   const [editDiscipline, setEditDiscipline] = useState('')
+  const [editMat, setEditMat] = useState('')
+  const [editFightNum, setEditFightNum] = useState('')
+  const [editTrackMode, setEditTrackMode] = useState(null)
 
   function handleEmailSave() {
     onEmailConfig(emailDraft)
@@ -60,6 +63,9 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
     setEditName(f.name)
     setEditMatchlistUrl(f.matchlistUrl || f.bracketUrl || '')
     setEditDiscipline(f.discipline || '')
+    setEditTrackMode(f.trackMode || null)
+    setEditMat(f.mat || '')
+    setEditFightNum(f.fightNum || '')
   }
 
   function cancelEdit() {
@@ -67,13 +73,23 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
     setEditName('')
     setEditMatchlistUrl('')
     setEditDiscipline('')
+    setEditTrackMode(null)
+    setEditMat('')
+    setEditFightNum('')
   }
 
   function handleEditSave(id) {
     const trimName = editName.trim()
     const trimUrl = editMatchlistUrl.trim()
     if (!trimName || !trimUrl) return
-    onEdit(id, { name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl, discipline: editDiscipline || null })
+    if (editTrackMode === 'fight') {
+      const mat = editMat.trim()
+      const fightNum = editFightNum.trim()
+      if (!mat || !fightNum) return
+      onEdit(id, { trackMode: 'fight', name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl, mat, fightNum })
+    } else {
+      onEdit(id, { name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl, discipline: editDiscipline || null })
+    }
     cancelEdit()
   }
 
@@ -262,7 +278,18 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
                           autoCapitalize="off"
                         />
                       </div>
-                      {!f.trackMode && (
+                      {f.trackMode === 'fight' ? (
+                        <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
+                          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                            <label>Mat</label>
+                            <input type="text" value={editMat} onChange={(e) => setEditMat(e.target.value)} autoComplete="off" />
+                          </div>
+                          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                            <label>N° combate</label>
+                            <input type="text" value={editFightNum} onChange={(e) => setEditFightNum(e.target.value)} autoComplete="off" />
+                          </div>
+                        </div>
+                      ) : (
                         <div className="form-group" style={{ marginBottom: 8 }}>
                           <label>Disciplina</label>
                           <select value={editDiscipline} onChange={(e) => setEditDiscipline(e.target.value)} style={{ ...selectStyle, padding: '10px 14px' }}>
