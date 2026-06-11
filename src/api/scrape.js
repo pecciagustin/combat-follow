@@ -234,7 +234,9 @@ function parseBjjFightByCoords(html, mat, fightNum) {
     }
 
     const blockStart = fm.index
-    const block = html.slice(blockStart, Math.min(html.length, blockStart + 1500))
+    const nextFightMatch = html.slice(blockStart + 1).search(/FIGHT\s+\d+:<\/span>/)
+    const blockEnd = nextFightMatch >= 0 ? blockStart + 1 + nextFightMatch : Math.min(html.length, blockStart + 1500)
+    const block = html.slice(blockStart, blockEnd)
     const names = [...block.matchAll(/class='match-card__competitor-name'>([^<]+)</g)]
       .map(m => m[1].trim())
       .filter((n, i, arr) => arr.indexOf(n) === i)
