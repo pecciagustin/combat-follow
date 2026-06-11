@@ -238,6 +238,7 @@ function parseBjjFightByCoords(html, mat, fightNum) {
     const names = [...block.matchAll(/class='match-card__competitor-name'>([^<]+)</g)]
       .map(m => m[1].trim())
       .filter((n, i, arr) => arr.indexOf(n) === i)
+      .filter(n => !/winner of fight/i.test(n))
 
     const isDecided = block.includes('match-competitor--loser')
     const catMatch = html.match(/tournament-category__title[^>]*>\s*([^<]+)/)
