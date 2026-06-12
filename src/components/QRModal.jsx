@@ -2,7 +2,16 @@ import { QRCodeSVG } from 'qrcode.react'
 
 export default function QRModal({ fighters, emailConfig, onClose }) {
   const payload = {
-    fighters: fighters.map(({ name, bracketUrl, matchlistUrl, discipline, trackMode, mat, fightNum }) => ({ name, bracketUrl, matchlistUrl, discipline, trackMode, mat, fightNum })),
+    fighters: fighters.map(({ name, bracketUrl, matchlistUrl, discipline, trackMode, mat, fightNum }) => {
+      const f = { name, bracketUrl }
+      // only include matchlistUrl if different from bracketUrl (avoids duplication)
+      if (matchlistUrl && matchlistUrl !== bracketUrl) f.matchlistUrl = matchlistUrl
+      if (discipline) f.discipline = discipline
+      if (trackMode) f.trackMode = trackMode
+      if (mat) f.mat = mat
+      if (fightNum) f.fightNum = fightNum
+      return f
+    }),
     email: emailConfig,
   }
   const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
