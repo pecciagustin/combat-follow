@@ -75,15 +75,9 @@ function parseBjjCompSystem(html, fighterName) {
 
 async function fetchPageText(url, retries = 3) {
   if (isDirectFetchable(url)) {
-    const res = await fetch(url, { credentials: 'omit' })
+    // cache: 'no-store' prevents stale PWA service worker cache on mobile
+    const res = await fetch(url, { credentials: 'omit', cache: 'no-store' })
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
-    return res.text()
-  }
-  // bjjcompsystem: mobile UA causes different HTML — use allorigins as neutral CORS proxy
-  if (url.includes('bjjcompsystem.com')) {
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-    const res = await fetch(proxyUrl)
-    if (!res.ok) throw new Error(`Proxy fetch failed: ${res.status}`)
     return res.text()
   }
   // Non-matchlist pages: use proxy (Jina) — currently only needed for bracket pages
