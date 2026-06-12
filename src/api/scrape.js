@@ -1,8 +1,9 @@
 const PROXY_BASE = '/api/fetch?url='
 
 // These pages can be fetched directly from the browser
+// bjjcompsystem excluded: must go through server proxy to avoid mobile UA / Cloudflare issues
 function isDirectFetchable(url) {
-  return url.includes('/schedule/matchlist') || url.includes('bjjcompsystem.com')
+  return url.includes('/schedule/matchlist')
 }
 
 // ── BJJ Comp System parser (IBJJF) ────────────────────
