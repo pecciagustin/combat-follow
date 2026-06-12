@@ -3,7 +3,7 @@ export const config = { runtime: 'edge' }
 // Detect if a URL can be fetched directly (server-side rendered)
 // AJP/Smoothcomp matchlist pages are SSR and don't need Jina
 function isDirectFetchable(url) {
-  return url.includes('/schedule/matchlist') || url.includes('bjjcompsystem.com')
+  return url.includes('/schedule/matchlist')
 }
 
 export default async function handler(req) {
