@@ -79,6 +79,13 @@ async function fetchPageText(url, retries = 3) {
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
     return res.text()
   }
+  // bjjcompsystem: mobile UA causes different HTML — use allorigins as neutral CORS proxy
+  if (url.includes('bjjcompsystem.com')) {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+    const res = await fetch(proxyUrl)
+    if (!res.ok) throw new Error(`Proxy fetch failed: ${res.status}`)
+    return res.text()
+  }
   // Non-matchlist pages: use proxy (Jina) — currently only needed for bracket pages
   for (let attempt = 0; attempt <= retries; attempt++) {
     const res = await fetch(PROXY_BASE + encodeURIComponent(url))
