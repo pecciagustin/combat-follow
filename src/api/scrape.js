@@ -141,7 +141,7 @@ function parseMatchlistHtml(html, fighterName, discipline) {
   const best = withRunning.length
     ? withRunning[withRunning.length - 1]  // running match = highest priority
     : withEta.length
-    ? withEta[withEta.length - 1]          // last upcoming match with time
+    ? withEta[0]                           // first upcoming match with time
     : candidates[candidates.length - 1]    // last match overall (most advanced)
 
   const nearNum     = numbers.filter(n => n.pos < best.pos).pop()
