@@ -96,6 +96,24 @@ async function fetchPageText(url, retries = 3) {
 // ── Matchlist HTML parser ─────────────────────────────
 // AJP/Smoothcomp matchlist pages are server-side rendered and CORS-enabled.
 // Structure per match: category-row div → number div (4-42) → eta div (13:38) → participant spans
+function decodeHtmlEntities(str) {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&ntilde;/g, 'ñ')
+    .replace(/&Ntilde;/g, 'Ñ')
+    .replace(/&aacute;/g, 'á').replace(/&Aacute;/g, 'Á')
+    .replace(/&eacute;/g, 'é').replace(/&Eacute;/g, 'É')
+    .replace(/&iacute;/g, 'í').replace(/&Iacute;/g, 'Í')
+    .replace(/&oacute;/g, 'ó').replace(/&Oacute;/g, 'Ó')
+    .replace(/&uacute;/g, 'ú').replace(/&Uacute;/g, 'Ú')
+    .replace(/&uuml;/g, 'ü').replace(/&Uuml;/g, 'Ü')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code)))
+}
+
 function parseMatchlistHtml(html, fighterName, discipline) {
   const nameLower = fighterName.toLowerCase()
 
@@ -103,7 +121,7 @@ function parseMatchlistHtml(html, fighterName, discipline) {
   const etas         = [...html.matchAll(/class="eta[^"]*">(\d{1,2}:\d{2})<\/div>/g)].map(m => ({ pos: m.index, time: m[1] }))
   const runningPos   = [...html.matchAll(/class="eta[^"]*">Running<\/div>/gi)].map(m => m.index)
   const finishedPos  = [...html.matchAll(/class="eta[^"]*">Finished<\/div>/gi)].map(m => m.index)
-  const participants = [...html.matchAll(/class="participant[^"]*">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, name: m[1].trim() }))
+  const participants = [...html.matchAll(/class="participant[^"]*">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, name: decodeHtmlEntities(m[1].trim()) }))
   const categories   = [...html.matchAll(/class="category-row">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, cat: m[1].trim() }))
 
   const fighterOccurrences = participants.filter(p => p.name.toLowerCase().includes(nameLower))
@@ -166,17 +184,21 @@ function parseMatchlistHtml(html, fighterName, discipline) {
 }
 
 function deriveMatchlistUrl(fighter) {
-  // If already a matchlist URL, use directly
-  if (fighter.matchlistUrl) return fighter.matchlistUrl
+  const firstName = encodeURIComponent(fighter.name.split(' ')[0].toLowerCase())
+  const addSearch = url => `${url}?search=${firstName}&club=&catid=0&mat=&country=`
+
+  if (fighter.matchlistUrl) {
+    const url = fighter.matchlistUrl
+    // If already has search params, use as-is; otherwise add them
+    return url.includes('search=') ? url : addSearch(url.split('?')[0])
+  }
   const url = fighter.bracketUrl || ''
-  // If bracketUrl IS a matchlist URL, use it directly
-  if (url.includes('/schedule/matchlist')) return url
+  if (url.includes('/schedule/matchlist')) {
+    return url.includes('search=') ? url : addSearch(url.split('?')[0])
+  }
   // Auto-derive from bracket URL (AJP/Smoothcomp format)
   const m = url.match(/(https?:\/\/[^/]+\/(?:[a-z]{2}\/)?event\/\d+)/)
-  if (m) {
-    const firstName = encodeURIComponent(fighter.name.split(' ')[0].toLowerCase())
-    return `${m[1]}/schedule/matchlist?search=${firstName}&club=&catid=0&mat=&country=`
-  }
+  if (m) return addSearch(`${m[1]}/schedule/matchlist`)
   return url // fallback
 }
 
