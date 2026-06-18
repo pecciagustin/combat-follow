@@ -74,22 +74,39 @@ function parseBjjCompSystem(html, fighterName) {
   }
 }
 
-async function fetchPageText(url, retries = 3) {
+function fetchWithTimeout(input, init, ms = 10000) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), ms)
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(id))
+}
+
+async function fetchPageText(url, retries = 2) {
   if (isDirectFetchable(url)) {
-    // cache: 'no-store' prevents stale PWA service worker cache on mobile
-    const res = await fetch(url, { credentials: 'omit', cache: 'no-store' })
-    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
-    return res.text()
-  }
-  // Non-matchlist pages: use proxy (Jina) — currently only needed for bracket pages
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(PROXY_BASE + encodeURIComponent(url))
-    if (res.status === 429) {
-      if (attempt < retries) { await new Promise(r => setTimeout(r, 3000 * (attempt + 1))); continue }
-      throw new Error('Jina fetch failed: 429')
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetchWithTimeout(url, { credentials: 'omit', cache: 'no-store' }, 10000)
+        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
+        return res.text()
+      } catch (err) {
+        if (attempt < retries) await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
+        else throw err
+      }
     }
-    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
-    return res.text()
+  }
+  // Non-matchlist: use Vercel proxy
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetchWithTimeout(PROXY_BASE + encodeURIComponent(url), {}, 12000)
+      if (res.status === 429) {
+        if (attempt < retries) { await new Promise(r => setTimeout(r, 3000 * (attempt + 1))); continue }
+        throw new Error('Proxy rate limited (429)')
+      }
+      if (!res.ok) throw new Error(`Proxy fetch failed: ${res.status}`)
+      return res.text()
+    } catch (err) {
+      if (attempt < retries) await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
+      else throw err
+    }
   }
 }
 
