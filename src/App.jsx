@@ -136,8 +136,11 @@ export default function App() {
         if (importedFighters.length > 0) {
           const newFighters = importedFighters.map((f) => ({ ...f, id: crypto.randomUUID() }))
           setFighters((prev) => {
-            const existingUrls = new Set(prev.map((f) => f.bracketUrl))
-            const toAdd = newFighters.filter((f) => !existingUrls.has(f.bracketUrl))
+            const fighterKey = f => f.trackMode === 'fight'
+              ? `fight:${f.matchlistUrl}:${f.mat}:${f.fightNum}`
+              : f.bracketUrl
+            const existingKeys = new Set(prev.map(fighterKey))
+            const toAdd = newFighters.filter((f) => !existingKeys.has(fighterKey(f)))
             return [...prev, ...toAdd]
           })
         }
@@ -195,8 +198,11 @@ export default function App() {
       if (importedFighters.length > 0) {
         const newFighters = importedFighters.map((f) => ({ ...f, id: crypto.randomUUID() }))
         setFighters((prev) => {
-          const existingUrls = new Set(prev.map((f) => f.bracketUrl))
-          const toAdd = newFighters.filter((f) => !existingUrls.has(f.bracketUrl))
+          const fighterKey = f => f.trackMode === 'fight'
+            ? `fight:${f.matchlistUrl}:${f.mat}:${f.fightNum}`
+            : f.bracketUrl
+          const existingKeys = new Set(prev.map(fighterKey))
+          const toAdd = newFighters.filter((f) => !existingKeys.has(fighterKey(f)))
           return [...prev, ...toAdd]
         })
       }
