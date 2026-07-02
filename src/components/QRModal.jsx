@@ -1,10 +1,30 @@
 import { QRCodeSVG } from 'qrcode.react'
-import { useState } from 'react'
+import { Component } from 'react'
+
+class QRErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(e) { return { error: e.message || 'Error al generar QR' } }
+  render() {
+    if (this.state.error) {
+      return (
+        <p style={{ color: '#e55', fontSize: 13, textAlign: 'center', padding: '1rem' }}>
+          {this.state.error.includes('data') || this.state.error.includes('long')
+            ? 'Demasiados datos para el QR. Reduce el número de luchadores.'
+            : 'Error al generar el QR.'}
+        </p>
+      )
+    }
+    return this.props.children
+  }
+}
 
 export default function QRModal({ fighters, emailConfig, onClose }) {
-  const [qrError, setQrError] = useState(null)
-
   let url = null
+  let encodeError = null
+
   try {
     const payload = {
       fighters: fighters.map(({ name, bracketUrl, matchlistUrl, discipline, trackMode, mat, fightNum }) => {
@@ -22,7 +42,7 @@ export default function QRModal({ fighters, emailConfig, onClose }) {
     const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
     url = `${window.location.origin}${window.location.pathname}?import=${encoded}`
   } catch (e) {
-    // will render error below
+    encodeError = e.message || 'Error al codificar datos'
   }
 
   return (
@@ -33,22 +53,21 @@ export default function QRModal({ fighters, emailConfig, onClose }) {
           <button className="qr-close" onClick={onClose}>✕</button>
         </div>
         <div className="qr-body">
-          {url ? (
-            <QRCodeSVG
-              value={url}
-              size={220}
-              bgColor="#ffffff"
-              fgColor="#0f0f0f"
-              level="M"
-            />
-          ) : (
-            <p style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center', padding: '1rem' }}>
-              Error al generar el QR. Intenta con menos luchadores.
+          {encodeError ? (
+            <p style={{ color: '#e55', fontSize: 13, textAlign: 'center', padding: '1rem' }}>
+              {encodeError}
             </p>
-          )}
-          {qrError && (
-            <p style={{ color: '#e55', fontSize: 12, textAlign: 'center', marginTop: 8 }}>{qrError}</p>
-          )}
+          ) : url ? (
+            <QRErrorBoundary>
+              <QRCodeSVG
+                value={url}
+                size={220}
+                bgColor="#ffffff"
+                fgColor="#0f0f0f"
+                level="M"
+              />
+            </QRErrorBoundary>
+          ) : null}
         </div>
         <p className="qr-hint">
           Abre la cámara del iPhone y apunta al QR.<br />
