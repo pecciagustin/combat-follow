@@ -215,6 +215,36 @@ export default function App() {
     }
   }
 
+  function handlePasteImport(text) {
+    try {
+      const urlObj = new URL(text.trim())
+      const importParam = urlObj.searchParams.get('import')
+      if (!importParam) { alert('El enlace no contiene datos de importación.'); return }
+      const decoded = JSON.parse(decodeURIComponent(escape(atob(importParam))))
+      const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
+      const importedEmail = !Array.isArray(decoded) ? decoded.email : null
+      if (importedFighters.length > 0) {
+        const newFighters = importedFighters.map((f) => ({ ...f, id: crypto.randomUUID() }))
+        setFighters((prev) => {
+          const fighterKey = f => f.trackMode === 'fight'
+            ? `fight:${f.matchlistUrl}:${f.mat}:${f.fightNum}`
+            : f.bracketUrl
+          const existingKeys = new Set(prev.map(fighterKey))
+          const toAdd = newFighters.filter((f) => !existingKeys.has(fighterKey(f)))
+          return [...prev, ...toAdd]
+        })
+      }
+      if (importedEmail?.serviceId) {
+        setEmailConfig(importedEmail)
+        localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(importedEmail))
+      }
+      return importedFighters.length
+    } catch {
+      alert('Enlace inválido.')
+      return 0
+    }
+  }
+
   function handleManualRefresh() {
     refresh()
   }
@@ -292,6 +322,7 @@ export default function App() {
           onClearAll={clearAllFighters}
           onShowQR={() => setShowQR(true)}
           onShowScanner={() => setShowScanner(true)}
+          onPasteImport={handlePasteImport}
         />
       )}
 

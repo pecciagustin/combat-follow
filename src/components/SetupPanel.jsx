@@ -2,8 +2,10 @@ import { useState } from 'react'
 
 const selectStyle = { width: '100%', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontFamily: 'inherit', fontSize: 15, padding: '12px 14px', minHeight: 44, outline: 'none' }
 
-export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner, onClearAll }) {
+export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner, onClearAll, onPasteImport }) {
   const [addMode, setAddMode] = useState('fighter') // 'fighter' | 'fight'
+  const [pasteLink, setPasteLink] = useState('')
+  const [pasteSuccess, setPasteSuccess] = useState(false)
 
   // fighter form
   const [name, setName] = useState('')
@@ -240,9 +242,29 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
             </button>
             {fighters.length > 0 && (
               <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={onShowQR}>
-                Generar QR
+                Compartir enlace
               </button>
             )}
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <input
+              type="url"
+              placeholder="Pegar enlace de importación…"
+              value={pasteLink}
+              onChange={(e) => { setPasteLink(e.target.value); setPasteSuccess(false) }}
+              style={{ flex: 1, background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 13, padding: '8px 12px', outline: 'none' }}
+            />
+            <button
+              className="btn-ghost"
+              style={{ minHeight: 36, fontSize: 12, whiteSpace: 'nowrap' }}
+              disabled={!pasteLink.trim()}
+              onClick={() => {
+                const count = onPasteImport(pasteLink)
+                if (count > 0) { setPasteSuccess(true); setPasteLink('') }
+              }}
+            >
+              {pasteSuccess ? '✓ Importado' : 'Importar'}
+            </button>
           </div>
         </div>
         <div style={{ marginTop: 8 }}>
