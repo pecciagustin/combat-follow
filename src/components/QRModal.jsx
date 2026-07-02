@@ -63,7 +63,7 @@ export default function QRModal({ fighters, emailConfig, onClose }) {
       </p>
       <button
         onClick={handleCopy}
-        style={{ width: '100%', padding: '9px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}
+        style={{ width: '100%', padding: '9px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
       >
         {copied ? '✓ Enlace copiado' : 'Copiar enlace'}
       </button>
