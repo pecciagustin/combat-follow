@@ -1,27 +1,8 @@
-import { QRCodeSVG } from 'qrcode.react'
-import { Component } from 'react'
-
-class QRErrorBoundary extends Component {
-  constructor(props) {
-    super(props)
-    this.state = { error: null }
-  }
-  static getDerivedStateFromError(e) { return { error: e.message || 'Error al generar QR' } }
-  render() {
-    if (this.state.error) {
-      return (
-        <p style={{ color: '#e55', fontSize: 13, textAlign: 'center', padding: '1rem' }}>
-          {this.state.error.includes('data') || this.state.error.includes('long')
-            ? 'Demasiados datos para el QR. Reduce el número de luchadores.'
-            : 'Error al generar el QR.'}
-        </p>
-      )
-    }
-    return this.props.children
-  }
-}
+import { useState } from 'react'
 
 export default function QRModal({ fighters, emailConfig, onClose }) {
+  const [copied, setCopied] = useState(false)
+
   let url = null
   let encodeError = null
 
@@ -42,38 +23,45 @@ export default function QRModal({ fighters, emailConfig, onClose }) {
     const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
     url = `${window.location.origin}${window.location.pathname}?import=${encoded}`
   } catch (e) {
-    encodeError = e.message || 'Error al codificar datos'
+    encodeError = 'Error al generar el enlace.'
+  }
+
+  function handleCopy() {
+    if (!url) return
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
   }
 
   return (
     <div className="qr-overlay" onClick={onClose}>
       <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
         <div className="qr-header">
-          <div className="qr-title">Escanear desde el móvil</div>
+          <div className="qr-title">Pasar al móvil</div>
           <button className="qr-close" onClick={onClose}>✕</button>
         </div>
-        <div className="qr-body">
+        <div className="qr-body" style={{ padding: '1rem' }}>
           {encodeError ? (
-            <p style={{ color: '#e55', fontSize: 13, textAlign: 'center', padding: '1rem' }}>
-              {encodeError}
-            </p>
-          ) : url ? (
-            <QRErrorBoundary>
-              <QRCodeSVG
-                value={url}
-                size={220}
-                bgColor="#ffffff"
-                fgColor="#0f0f0f"
-                level="M"
-              />
-            </QRErrorBoundary>
-          ) : null}
+            <p style={{ color: '#e55', fontSize: 13, textAlign: 'center' }}>{encodeError}</p>
+          ) : (
+            <>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, textAlign: 'center' }}>
+                Copia este enlace y ábrelo en el móvil
+              </p>
+              <div style={{ background: 'var(--surface)', borderRadius: 8, padding: '10px 12px', fontSize: 11, color: 'var(--text-secondary)', wordBreak: 'break-all', marginBottom: 12, maxHeight: 80, overflow: 'hidden' }}>
+                {url}
+              </div>
+              <button
+                onClick={handleCopy}
+                style={{ width: '100%', padding: '10px', background: copied ? '#2a7a2a' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+              >
+                {copied ? '✓ Copiado' : 'Copiar enlace'}
+              </button>
+            </>
+          )}
         </div>
-        <p className="qr-hint">
-          Abre la cámara del iPhone y apunta al QR.<br />
-          Se abrirá la app con luchadores y email configurados.
-        </p>
-        <p className="qr-fighters">
+        <p className="qr-fighters" style={{ padding: '0 1rem 1rem' }}>
           {fighters.length} luchador{fighters.length !== 1 ? 'es' : ''}: {fighters.map(f => f.name).join(', ')}
         </p>
       </div>
