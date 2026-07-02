@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import LZString from 'lz-string'
 import Header from './components/Header'
 import SetupPanel from './components/SetupPanel'
 import FighterCard from './components/FighterCard'
@@ -8,6 +9,14 @@ import QRScanner from './components/QRScanner'
 
 const STORAGE_KEY = 'combat-follow-fighters'
 const EMAIL_CONFIG_KEY = 'combat-follow-email'
+
+function decodeImportParam(params) {
+  const z = params.get('importz')
+  if (z) return JSON.parse(LZString.decompressFromEncodedURIComponent(z))
+  const plain = params.get('import')
+  if (plain) return JSON.parse(decodeURIComponent(escape(atob(plain))))
+  return null
+}
 
 function loadEmailConfig() {
   try {
@@ -122,13 +131,12 @@ export default function App() {
     return () => clearInterval(intervalRef.current)
   }, [refresh, intervalSec, fighters.length])
 
-  // On load: check for ?import= param and merge fighters from QR
+  // On load: check for ?import= / ?importz= param and merge fighters from QR
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const importParam = params.get('import')
-    if (importParam) {
+    if (params.get('import') || params.get('importz')) {
       try {
-        const decoded = JSON.parse(decodeURIComponent(escape(atob(importParam))))
+        const decoded = decodeImportParam(params)
         // Support both old format (array) and new format ({ fighters, email })
         const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
         const importedEmail = !Array.isArray(decoded) ? decoded.email : null
@@ -188,11 +196,9 @@ export default function App() {
   function handleScanResult(data) {
     setShowScanner(false)
     try {
-      // Extract ?import= param from scanned URL
       const url = new URL(data)
-      const importParam = url.searchParams.get('import')
-      if (!importParam) return
-      const decoded = JSON.parse(decodeURIComponent(escape(atob(importParam))))
+      const decoded = decodeImportParam(url.searchParams)
+      if (!decoded) return
       const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
       const importedEmail = !Array.isArray(decoded) ? decoded.email : null
       if (importedFighters.length > 0) {
@@ -218,9 +224,8 @@ export default function App() {
   function handlePasteImport(text) {
     try {
       const urlObj = new URL(text.trim())
-      const importParam = urlObj.searchParams.get('import')
-      if (!importParam) { alert('El enlace no contiene datos de importación.'); return }
-      const decoded = JSON.parse(decodeURIComponent(escape(atob(importParam))))
+      const decoded = decodeImportParam(urlObj.searchParams)
+      if (!decoded) { alert('El enlace no contiene datos de importación.'); return }
       const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
       const importedEmail = !Array.isArray(decoded) ? decoded.email : null
       if (importedFighters.length > 0) {
