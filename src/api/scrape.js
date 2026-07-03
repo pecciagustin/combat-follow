@@ -84,7 +84,7 @@ async function fetchPageText(url, retries = 2) {
   if (isDirectFetchable(url)) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const res = await fetchWithTimeout(url, { credentials: 'omit', cache: 'no-store' }, 10000)
+        const res = await fetchWithTimeout(url, { credentials: 'include', cache: 'no-store' }, 10000)
         if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
         return res.text()
       } catch (err) {
