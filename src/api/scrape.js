@@ -1,12 +1,9 @@
 const PROXY_BASE = '/api/fetch?url='
 
-// Only smoothcomp.com (main domain) can be fetched directly — custom subdomains have
-// stricter Cloudflare protection that blocks cross-origin browser fetches (Sec-Fetch-Site: cross-site)
+// Matchlist pages are server-side rendered and CORS-enabled — fetch directly from browser
+// bjjcompsystem excluded: must go through server proxy to avoid mobile UA / Cloudflare issues
 function isDirectFetchable(url) {
-  try {
-    const hostname = new URL(url).hostname
-    return (hostname === 'smoothcomp.com' || hostname === 'www.smoothcomp.com') && url.includes('/schedule/matchlist')
-  } catch { return false }
+  return url.includes('/schedule/matchlist')
 }
 
 // ── BJJ Comp System parser (IBJJF) ────────────────────
@@ -85,16 +82,10 @@ function fetchWithTimeout(input, init, ms = 10000) {
 
 async function fetchPageText(url, retries = 2) {
   if (isDirectFetchable(url)) {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const res = await fetchWithTimeout(url, { credentials: 'omit', cache: 'no-store' }, 10000)
-        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
-        return res.text()
-      } catch (err) {
-        if (attempt < retries) await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
-        else throw err
-      }
-    }
+    // Simple fetch without AbortController — most compatible with all browsers
+    const res = await fetch(url, { credentials: 'omit', cache: 'no-store' })
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
+    return res.text()
   }
   // Non-matchlist: use Vercel proxy
   for (let attempt = 0; attempt <= retries; attempt++) {
