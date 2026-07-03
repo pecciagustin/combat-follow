@@ -1,9 +1,12 @@
 const PROXY_BASE = '/api/fetch?url='
 
-// These pages can be fetched directly from the browser
-// bjjcompsystem excluded: must go through server proxy to avoid mobile UA / Cloudflare issues
+// Only smoothcomp.com (main domain) can be fetched directly — custom subdomains have
+// stricter Cloudflare protection that blocks cross-origin browser fetches (Sec-Fetch-Site: cross-site)
 function isDirectFetchable(url) {
-  return url.includes('/schedule/matchlist')
+  try {
+    const hostname = new URL(url).hostname
+    return (hostname === 'smoothcomp.com' || hostname === 'www.smoothcomp.com') && url.includes('/schedule/matchlist')
+  } catch { return false }
 }
 
 // ── BJJ Comp System parser (IBJJF) ────────────────────
@@ -84,7 +87,7 @@ async function fetchPageText(url, retries = 2) {
   if (isDirectFetchable(url)) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const res = await fetchWithTimeout(url, { credentials: 'include', cache: 'no-store' }, 10000)
+        const res = await fetchWithTimeout(url, { credentials: 'omit', cache: 'no-store' }, 10000)
         if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
         return res.text()
       } catch (err) {
@@ -102,7 +105,11 @@ async function fetchPageText(url, retries = 2) {
         throw new Error('Proxy rate limited (429)')
       }
       if (!res.ok) throw new Error(`Proxy fetch failed: ${res.status}`)
-      return res.text()
+      const text = await res.text()
+      if (text.includes('cf_chl_opt') || text.includes('Just a moment')) {
+        throw new Error('Cloudflare: este evento requiere acceso directo al sitio')
+      }
+      return text
     } catch (err) {
       if (attempt < retries) await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
       else throw err
