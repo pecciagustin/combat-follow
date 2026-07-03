@@ -82,8 +82,7 @@ function fetchWithTimeout(input, init, ms = 10000) {
 
 async function fetchPageText(url, retries = 2) {
   if (isDirectFetchable(url)) {
-    // Simple fetch without AbortController — most compatible with all browsers
-    const res = await fetch(url, { credentials: 'omit', cache: 'no-store' })
+    const res = await fetchWithTimeout(url, { credentials: 'omit', cache: 'no-store' }, 8000)
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
     return res.text()
   }
