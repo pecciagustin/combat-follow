@@ -247,6 +247,43 @@ async function fetchSmooothcompEventData(eventBaseUrl) {
   return matMatches.filter(Boolean)
 }
 
+function findFightByCoordInSmooothcompData(matData, mat, fightNum) {
+  const matStr = String(mat)
+  const fightStr = String(fightNum)
+  const fullRef = `${matStr}-${fightStr}`
+
+  for (const { mat: matObj, matches } of matData) {
+    for (const match of matches) {
+      const matchRef = String(match.mat_match_nr || '')
+      const matName = String(matObj.name || '')
+      const refMatches = matchRef === fullRef ||
+        (matchRef === fightStr && (matName === matStr || matName.includes(matStr)))
+      if (!refMatches) continue
+
+      const seats = match.seats || []
+      const state = match.state || 'seeded'
+      const isFinished = ['finished', 'decided', 'wo'].includes(state)
+      const isRunning = state === 'running'
+
+      let time = null
+      if (match.estimated_start) {
+        const d = new Date(match.estimated_start)
+        time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      }
+
+      return {
+        time,
+        mat: matStr,
+        fight: fightStr,
+        fighters: seats.map(s => s.name).filter(Boolean),
+        category: match.group || null,
+        status: isRunning ? 'live' : isFinished ? 'finished' : 'upcoming',
+      }
+    }
+  }
+  return null
+}
+
 function findFighterInSmooothcompData(matData, fighterName, discipline) {
   const nameLower = fighterName.toLowerCase()
   const fighterMatches = []
@@ -378,7 +415,7 @@ export async function scrapeAllFighters(fighters) {
   // Pre-fetch smoothcomp JSON API data once per unique event (bypasses Cloudflare)
   const smoothcompFighters = fighters.filter(f => {
     const url = f.matchlistUrl || f.bracketUrl || ''
-    return !f.trackMode && !url.includes('bjjcompsystem.com') && url.match(/smoothcomp\.com/)
+    return !url.includes('bjjcompsystem.com') && url.match(/smoothcomp\.com/)
   })
   const eventBaseUrls = [...new Set(
     smoothcompFighters
@@ -400,10 +437,23 @@ export async function scrapeAllFighters(fighters) {
 
       // ── Fight-by-coordinates mode ──────────────────────
       if (fighter.trackMode === 'fight') {
+        if (url.includes('bjjcompsystem.com')) {
+          const html = await fetchPageText(url)
+          const data = parseBjjFightByCoords(html, fighter.mat, fighter.fightNum)
+          if (data) return { id: fighter.id, data: { ...data, trackMode: 'fight' }, error: null }
+          return { id: fighter.id, data: { trackMode: 'fight', mat: fighter.mat, fight: fighter.fightNum, fighters: [], status: 'notfound' }, error: null }
+        }
+        if (url.match(/smoothcomp\.com/)) {
+          const baseUrl = extractSmooothcompEventBase(url)
+          const matData = baseUrl ? eventCache[baseUrl] : null
+          if (!matData) throw new Error('No se pudo obtener datos del evento')
+          const data = findFightByCoordInSmooothcompData(matData, fighter.mat, fighter.fightNum)
+          if (data) return { id: fighter.id, data: { ...data, trackMode: 'fight' }, error: null }
+          return { id: fighter.id, data: { trackMode: 'fight', mat: fighter.mat, fight: fighter.fightNum, fighters: [], status: 'notfound' }, error: null }
+        }
+        // AJP / other HTML
         const html = await fetchPageText(url)
-        const data = url.includes('bjjcompsystem.com')
-          ? parseBjjFightByCoords(html, fighter.mat, fighter.fightNum)
-          : parseFightByCoords(html, fighter.mat, fighter.fightNum)
+        const data = parseFightByCoords(html, fighter.mat, fighter.fightNum)
         if (data) return { id: fighter.id, data: { ...data, trackMode: 'fight' }, error: null }
         return { id: fighter.id, data: { trackMode: 'fight', mat: fighter.mat, fight: fighter.fightNum, fighters: [], status: 'notfound' }, error: null }
       }
