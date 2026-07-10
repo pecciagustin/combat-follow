@@ -203,17 +203,104 @@ function deriveMatchlistUrl(fighter) {
 
   if (fighter.matchlistUrl) {
     const url = fighter.matchlistUrl
-    // If already has search params, use as-is; otherwise add them
     return url.includes('search=') ? url : addSearch(url.split('?')[0])
   }
   const url = fighter.bracketUrl || ''
   if (url.includes('/schedule/matchlist')) {
     return url.includes('search=') ? url : addSearch(url.split('?')[0])
   }
-  // Auto-derive from bracket URL (AJP/Smoothcomp format)
   const m = url.match(/(https?:\/\/[^/]+\/(?:[a-z]{2}\/)?event\/\d+)/)
   if (m) return addSearch(`${m[1]}/schedule/matchlist`)
-  return url // fallback
+  return url
+}
+
+function extractSmooothcompEventBase(url) {
+  const m = url.match(/(https?:\/\/[^/]+\/(?:[a-z]{2}\/)?event\/\d+)/)
+  return m ? m[1] : null
+}
+
+async function fetchJson(url) {
+  const res = await fetchWithTimeout(url, { credentials: 'omit', cache: 'no-store' }, 15000)
+  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
+  return res.json()
+}
+
+async function fetchSmooothcompEventData(eventBaseUrl) {
+  const bracketsData = await fetchJson(`${eventBaseUrl}/schedule/brackets.json`)
+  const brackets = bracketsData.brackets || []
+
+  const renderResults = await Promise.all(
+    brackets.map(async (bracket) => {
+      try {
+        const data = await fetchJson(`${eventBaseUrl}/bracket/${bracket.bracket_id}/getRenderData`)
+        return { bracket, data }
+      } catch {
+        return null
+      }
+    })
+  )
+  return renderResults.filter(Boolean)
+}
+
+function findFighterInSmooothcompData(renderResults, fighterName, discipline) {
+  const nameLower = fighterName.toLowerCase()
+
+  // Collect all matches where this fighter appears, across all brackets
+  const fighterMatches = []
+  for (const { bracket, data } of renderResults) {
+    const catLower = (bracket.name || '').toLowerCase()
+    // Filter by discipline if specified
+    if (discipline === 'nogi' && !/no.?gi/i.test(catLower)) continue
+    if (discipline === 'gi' && (/no.?gi/i.test(catLower) || !/\bgi\b/i.test(catLower))) continue
+
+    const rounds = data.state?.rounds || {}
+    for (const matches of Object.values(rounds)) {
+      for (const match of matches) {
+        const leftName = match.seats?.left?.player?.name || ''
+        const rightName = match.seats?.right?.player?.name || ''
+        const isLeft = leftName.toLowerCase().includes(nameLower)
+        const isRight = rightName.toLowerCase().includes(nameLower)
+        if (!isLeft && !isRight) continue
+
+        const state = match.state || 'seeded'
+        const isFinished = state === 'finished' || state === 'decided' || state === 'wo'
+        const isRunning = state === 'running'
+        const opponent = isLeft ? rightName : leftName
+
+        // Get time from bracket estimated_start
+        let time = null
+        if (bracket.estimated_start) {
+          const d = new Date(bracket.estimated_start)
+          time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        }
+
+        fighterMatches.push({
+          time,
+          mat: match.mat_name || null,
+          fight: match.mat_match_nr || String(match.match_nr),
+          opponent: opponent || null,
+          category: bracket.name || null,
+          status: isRunning ? 'live' : isFinished ? 'finished' : 'upcoming',
+          isFinished,
+          isRunning,
+          matchNr: match.match_nr,
+          round: match.round || 1,
+        })
+      }
+    }
+  }
+
+  if (!fighterMatches.length) return null
+
+  // Prefer: running > upcoming > last finished
+  const running = fighterMatches.find(m => m.isRunning)
+  if (running) return { ...running, status: 'live', fights: [] }
+
+  const upcoming = fighterMatches.find(m => !m.isFinished)
+  if (upcoming) return { ...upcoming, fights: [] }
+
+  const last = fighterMatches[fighterMatches.length - 1]
+  return { ...last, status: 'finished', fights: [] }
 }
 
 // ── Fight-by-coordinates parser (AJP/Smoothcomp) ────────
@@ -296,7 +383,25 @@ function parseBjjFightByCoords(html, mat, fightNum) {
 }
 
 export async function scrapeAllFighters(fighters) {
-  // All fetches in parallel — direct browser fetch, no rate limiting
+  // Pre-fetch smoothcomp JSON API data once per unique event (bypasses Cloudflare)
+  const smoothcompFighters = fighters.filter(f => {
+    const url = f.matchlistUrl || f.bracketUrl || ''
+    return !f.trackMode && !url.includes('bjjcompsystem.com') && url.match(/smoothcomp\.com/)
+  })
+  const eventBaseUrls = [...new Set(
+    smoothcompFighters
+      .map(f => extractSmooothcompEventBase(f.matchlistUrl || f.bracketUrl || ''))
+      .filter(Boolean)
+  )]
+  const eventCache = {}
+  await Promise.all(eventBaseUrls.map(async (baseUrl) => {
+    try {
+      eventCache[baseUrl] = await fetchSmooothcompEventData(baseUrl)
+    } catch {
+      eventCache[baseUrl] = null
+    }
+  }))
+
   const results = await Promise.all(fighters.map(async (fighter) => {
     try {
       const url = fighter.matchlistUrl || fighter.bracketUrl || ''
@@ -307,9 +412,7 @@ export async function scrapeAllFighters(fighters) {
         const data = url.includes('bjjcompsystem.com')
           ? parseBjjFightByCoords(html, fighter.mat, fighter.fightNum)
           : parseFightByCoords(html, fighter.mat, fighter.fightNum)
-        if (data) {
-          return { id: fighter.id, data: { ...data, trackMode: 'fight' }, error: null }
-        }
+        if (data) return { id: fighter.id, data: { ...data, trackMode: 'fight' }, error: null }
         return { id: fighter.id, data: { trackMode: 'fight', mat: fighter.mat, fight: fighter.fightNum, fighters: [], status: 'notfound' }, error: null }
       }
 
@@ -317,22 +420,26 @@ export async function scrapeAllFighters(fighters) {
       if (url.includes('bjjcompsystem.com')) {
         const html = await fetchPageText(url)
         const data = parseBjjCompSystem(html, fighter.name)
-        if (data && (data.time || data.mat)) {
-          return { id: fighter.id, data: { ...data, athlete: fighter.name }, error: null }
-        }
+        if (data && (data.time || data.mat)) return { id: fighter.id, data: { ...data, athlete: fighter.name }, error: null }
         return { id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null }
       }
 
-      // ── AJP / Smoothcomp ─────────────────────────────
+      // ── Smoothcomp — JSON API (no Cloudflare) ─────────
+      if (url.match(/smoothcomp\.com/)) {
+        const baseUrl = extractSmooothcompEventBase(url)
+        const renderResults = baseUrl ? eventCache[baseUrl] : null
+        if (!renderResults) throw new Error('No se pudo obtener datos del evento')
+        const data = findFighterInSmooothcompData(renderResults, fighter.name, fighter.discipline)
+        if (data) return { id: fighter.id, data: { ...data, athlete: fighter.name }, error: null }
+        return { id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null }
+      }
+
+      // ── AJP / other (HTML matchlist) ──────────────────
       const matchlistUrl = deriveMatchlistUrl(fighter)
       if (!matchlistUrl) throw new Error('No matchlist URL configured')
-
       const text = await fetchPageText(matchlistUrl)
       const data = parseMatchlistHtml(text, fighter.name, fighter.discipline)
-
-      if (data && (data.time || data.mat)) {
-        return { id: fighter.id, data: { ...data, athlete: fighter.name, status: data.status || 'upcoming', fights: [] }, error: null }
-      }
+      if (data && (data.time || data.mat)) return { id: fighter.id, data: { ...data, athlete: fighter.name, status: data.status || 'upcoming', fights: [] }, error: null }
       return { id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null }
     } catch (err) {
       return { id: fighter.id, data: null, error: err.message || 'Error fetching data' }
