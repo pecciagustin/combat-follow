@@ -226,81 +226,73 @@ async function fetchJson(url) {
 }
 
 async function fetchSmooothcompEventData(eventBaseUrl) {
-  const bracketsData = await fetchJson(`${eventBaseUrl}/schedule/brackets.json`)
-  const brackets = bracketsData.brackets || []
+  // Get mat category ID, then mat IDs, then all matches per mat
+  const categories = await fetchJson(`${eventBaseUrl}/schedule/new/matcategories.json`)
+  const categoryId = categories?.[0]?.id
+  if (!categoryId) throw new Error('No mat categories found')
 
-  const renderResults = await Promise.all(
-    brackets.map(async (bracket) => {
+  const mats = await fetchJson(`${eventBaseUrl}/schedule/new/mats.json/${categoryId}`)
+  if (!mats?.length) throw new Error('No mats found')
+
+  const matMatches = await Promise.all(
+    mats.map(async (mat) => {
       try {
-        const data = await fetchJson(`${eventBaseUrl}/bracket/${bracket.bracket_id}/getRenderData`)
-        return { bracket, data }
+        const matches = await fetchJson(`${eventBaseUrl}/schedule/new/mat/${mat.id}/matches.json`)
+        return { mat, matches }
       } catch {
         return null
       }
     })
   )
-  return renderResults.filter(Boolean)
+  return matMatches.filter(Boolean)
 }
 
-function findFighterInSmooothcompData(renderResults, fighterName, discipline) {
+function findFighterInSmooothcompData(matData, fighterName, discipline) {
   const nameLower = fighterName.toLowerCase()
-
-  // Collect all matches where this fighter appears, across all brackets
   const fighterMatches = []
-  for (const { bracket, data } of renderResults) {
-    const catLower = (bracket.name || '').toLowerCase()
-    // Filter by discipline if specified
-    if (discipline === 'nogi' && !/no.?gi/i.test(catLower)) continue
-    if (discipline === 'gi' && (/no.?gi/i.test(catLower) || !/\bgi\b/i.test(catLower))) continue
 
-    const rounds = data.state?.rounds || {}
-    for (const matches of Object.values(rounds)) {
-      for (const match of matches) {
-        const leftName = match.seats?.left?.player?.name || ''
-        const rightName = match.seats?.right?.player?.name || ''
-        const isLeft = leftName.toLowerCase().includes(nameLower)
-        const isRight = rightName.toLowerCase().includes(nameLower)
-        if (!isLeft && !isRight) continue
+  for (const { mat, matches } of matData) {
+    for (const match of matches) {
+      const group = match.group || ''
+      // Filter by discipline if specified
+      if (discipline === 'nogi' && !/no.?gi/i.test(group)) continue
+      if (discipline === 'gi' && (/no.?gi/i.test(group) || !/\bgi\b/i.test(group))) continue
 
-        const state = match.state || 'seeded'
-        const isFinished = state === 'finished' || state === 'decided' || state === 'wo'
-        const isRunning = state === 'running'
-        const opponent = isLeft ? rightName : leftName
+      const seats = match.seats || []
+      const fighterSeat = seats.find(s => (s.name || '').toLowerCase().includes(nameLower))
+      if (!fighterSeat) continue
 
-        // Get time from bracket estimated_start
-        let time = null
-        if (bracket.estimated_start) {
-          const d = new Date(bracket.estimated_start)
-          time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-        }
+      const opponent = seats.find(s => s !== fighterSeat)?.name || null
+      const state = match.state || 'seeded'
+      const isFinished = state === 'finished' || state === 'decided' || state === 'wo'
+      const isRunning = state === 'running'
 
-        fighterMatches.push({
-          time,
-          mat: match.mat_name || null,
-          fight: match.mat_match_nr || String(match.match_nr),
-          opponent: opponent || null,
-          category: bracket.name || null,
-          status: isRunning ? 'live' : isFinished ? 'finished' : 'upcoming',
-          isFinished,
-          isRunning,
-          matchNr: match.match_nr,
-          round: match.round || 1,
-        })
+      let time = null
+      if (match.estimated_start) {
+        const d = new Date(match.estimated_start)
+        time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
       }
+
+      fighterMatches.push({
+        time,
+        mat: mat.name || null,
+        fight: match.mat_match_nr || String(match.match_nr),
+        opponent,
+        category: group || null,
+        status: isRunning ? 'live' : isFinished ? 'finished' : 'upcoming',
+        isFinished,
+        isRunning,
+      })
     }
   }
 
   if (!fighterMatches.length) return null
 
-  // Prefer: running > upcoming > last finished
   const running = fighterMatches.find(m => m.isRunning)
-  if (running) return { ...running, status: 'live', fights: [] }
-
+  if (running) return { ...running, fights: [] }
   const upcoming = fighterMatches.find(m => !m.isFinished)
   if (upcoming) return { ...upcoming, fights: [] }
-
-  const last = fighterMatches[fighterMatches.length - 1]
-  return { ...last, status: 'finished', fights: [] }
+  return { ...fighterMatches[fighterMatches.length - 1], status: 'finished', fights: [] }
 }
 
 // ── Fight-by-coordinates parser (AJP/Smoothcomp) ────────
