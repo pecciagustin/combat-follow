@@ -2,10 +2,30 @@ import { useState } from 'react'
 
 const selectStyle = { width: '100%', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontFamily: 'inherit', fontSize: 15, padding: '12px 14px', minHeight: 44, outline: 'none' }
 
+function buildWatchUrl(fighters) {
+  const minimal = fighters.map(f => ({
+    name: f.name,
+    url: f.matchlistUrl || f.bracketUrl || '',
+    ...(f.discipline ? { discipline: f.discipline } : {}),
+    ...(f.trackMode === 'fight' ? { trackMode: 'fight', mat: f.mat, fightNum: f.fightNum } : {}),
+  }))
+  const encoded = btoa(JSON.stringify(minimal))
+  return `https://combat-follow.vercel.app/api/watch?f=${encoded}`
+}
+
 export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner, onClearAll, onPasteImport }) {
   const [addMode, setAddMode] = useState('fighter') // 'fighter' | 'fight'
   const [pasteLink, setPasteLink] = useState('')
   const [pasteSuccess, setPasteSuccess] = useState(false)
+  const [watchCopied, setWatchCopied] = useState(false)
+
+  function copyWatchUrl() {
+    const url = buildWatchUrl(fighters)
+    navigator.clipboard.writeText(url).then(() => {
+      setWatchCopied(true)
+      setTimeout(() => setWatchCopied(false), 2500)
+    })
+  }
 
   // fighter form
   const [name, setName] = useState('')
@@ -243,6 +263,11 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
             {fighters.length > 0 && (
               <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={onShowQR}>
                 Compartir enlace
+              </button>
+            )}
+            {fighters.length > 0 && (
+              <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={copyWatchUrl}>
+                {watchCopied ? '✓ Copiado' : '⌚ Watch URL'}
               </button>
             )}
           </div>
