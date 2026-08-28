@@ -319,11 +319,20 @@ function findFighterInSmooothcompData(matData, fighterName, discipline) {
         status: isRunning ? 'live' : isFinished ? 'finished' : 'upcoming',
         isFinished,
         isRunning,
+        _start: match.estimated_start ? new Date(match.estimated_start).getTime() : null,
       })
     }
   }
 
   if (!fighterMatches.length) return null
+
+  // Sort by estimated_start so we always pick the earliest upcoming fight
+  fighterMatches.sort((a, b) => {
+    if (!a._start && !b._start) return 0
+    if (!a._start) return 1
+    if (!b._start) return -1
+    return a._start - b._start
+  })
 
   const running = fighterMatches.find(m => m.isRunning)
   if (running) return { ...running, fights: [] }
