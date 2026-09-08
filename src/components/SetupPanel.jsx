@@ -14,7 +14,7 @@ function buildWatchUrl(fighters) {
   return `https://combat-follow.vercel.app/api/watch?f=${encoded}`
 }
 
-export default function SetupPanel({ fighters, events = [], activeEventId, onSelectEvent, onCreateEvent, onRenameEvent, onDeleteEvent, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner, onClearAll, onPasteImport }) {
+export default function SetupPanel({ fighters, events = [], activeEventId, onSelectEvent, onCreateEvent, onRenameEvent, onDeleteEvent, onAdd, onRemove, onEdit, onShowQR, onShowScanner, onClearAll, onPasteImport }) {
   const [addMode, setAddMode] = useState('fighter') // 'fighter' | 'fight'
   const [pasteLink, setPasteLink] = useState('')
   const [pasteSuccess, setPasteSuccess] = useState(false)
@@ -58,9 +58,6 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
   const [fightMat, setFightMat] = useState('')
   const [fightNum, setFightNum] = useState('')
 
-  const [emailDraft, setEmailDraft] = useState(emailConfig)
-  const [emailSaved, setEmailSaved] = useState(false)
-
   const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
   const [editMatchlistUrl, setEditMatchlistUrl] = useState('')
@@ -68,12 +65,6 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
   const [editMat, setEditMat] = useState('')
   const [editFightNum, setEditFightNum] = useState('')
   const [editTrackMode, setEditTrackMode] = useState(null)
-
-  function handleEmailSave() {
-    onEmailConfig(emailDraft)
-    setEmailSaved(true)
-    setTimeout(() => setEmailSaved(false), 2000)
-  }
 
   function handleSubmit(e) {
     e.preventDefault()
@@ -449,38 +440,6 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
         </div>
       </div>
 
-      {/* ── EmailJS config ── */}
-      <div className="add-fighter-form" style={{ marginTop: 24 }}>
-        <h2>Notificaciones por Email</h2>
-        <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
-          Crea una cuenta gratis en <strong style={{ color: 'var(--text)' }}>emailjs.com</strong> y pega tus credenciales aquí para recibir un email cuando falten menos de 10 minutos para un combate.
-        </p>
-        {[
-          { key: 'toEmail', label: 'Tu email', placeholder: 'tu@gmail.com', type: 'email' },
-          { key: 'serviceId', label: 'Service ID', placeholder: 'service_xxxxxxx', type: 'text' },
-          { key: 'templateId', label: 'Template ID', placeholder: 'template_xxxxxxx', type: 'text' },
-          { key: 'publicKey', label: 'Public Key', placeholder: 'xxxxxxxxxxxxxx', type: 'text' },
-        ].map(({ key, label, placeholder, type }) => (
-          <div className="form-group" key={key}>
-            <label>{label}</label>
-            <input
-              type={type}
-              placeholder={placeholder}
-              value={emailDraft[key] || ''}
-              onChange={(e) => setEmailDraft((d) => ({ ...d, [key]: e.target.value }))}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-            />
-          </div>
-        ))}
-        <button className="btn-primary" style={{ width: '100%', marginTop: 4 }} onClick={handleEmailSave}>
-          {emailSaved ? '✓ Guardado' : 'Guardar'}
-        </button>
-        <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 12, lineHeight: 1.5 }}>
-          En EmailJS, crea un template con las variables: <code style={{ color: 'var(--accent)' }}>{'{{to_email}}'}</code>, <code style={{ color: 'var(--accent)' }}>{'{{fighter_name}}'}</code>, <code style={{ color: 'var(--accent)' }}>{'{{changes}}'}</code>, <code style={{ color: 'var(--accent)' }}>{'{{time}}'}</code>
-        </p>
-      </div>
     </div>
   )
 }

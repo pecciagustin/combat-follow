@@ -971,6 +971,13 @@ button:active {
   width: 100%;
   justify-content: center;
 }
+.user-menu-item {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.notif-modal { max-width: 340px; }
 
 /* ─── Event bar (setup) & selector ────────────────────── */
 .event-bar {

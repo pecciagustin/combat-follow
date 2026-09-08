@@ -10,6 +10,7 @@ import LoginScreen from './components/LoginScreen'
 import StatusScreen from './components/StatusScreen'
 import AdminPanel from './components/AdminPanel'
 import SuccessOverlay from './components/SuccessOverlay'
+import NotificationsModal from './components/NotificationsModal'
 import { IconGear } from './components/icons'
 import { useAuth } from './auth/useAuth'
 
@@ -156,6 +157,12 @@ export default function App() {
   const [showQR, setShowQR] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [successInfo, setSuccessInfo] = useState(null)
+  const [showNotifications, setShowNotifications] = useState(false)
+
+  function saveEmailConfig(cfg) {
+    setEmailConfig(cfg)
+    localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(cfg))
+  }
   const intervalRef = useRef(null)
   const isLoadingRef = useRef(false) // ref-based lock — never stale in closures
 
@@ -455,6 +462,7 @@ export default function App() {
         isLoading={isLoading}
         user={user}
         onSignOut={signOut}
+        onOpenNotifications={() => setShowNotifications(true)}
       />
 
       {tab === 'admin' && isAdmin && (
@@ -473,11 +481,6 @@ export default function App() {
           onAdd={addFighter}
           onRemove={removeFighter}
           onEdit={editFighter}
-          emailConfig={emailConfig}
-          onEmailConfig={(cfg) => {
-            setEmailConfig(cfg)
-            localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(cfg))
-          }}
           onClearAll={clearAllFighters}
           onShowQR={() => setShowQR(true)}
           onShowScanner={() => setShowScanner(true)}
@@ -587,6 +590,13 @@ export default function App() {
           eventName={successInfo.eventName}
           count={successInfo.count}
           onClose={() => setSuccessInfo(null)}
+        />
+      )}
+      {showNotifications && (
+        <NotificationsModal
+          emailConfig={emailConfig}
+          onSave={saveEmailConfig}
+          onClose={() => setShowNotifications(false)}
         />
       )}
     </>
