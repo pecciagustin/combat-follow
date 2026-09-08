@@ -6,6 +6,8 @@ import FighterCard from './components/FighterCard'
 import { scrapeAllFighters } from './api/scrape'
 import QRModal from './components/QRModal'
 import QRScanner from './components/QRScanner'
+import LoginScreen from './components/LoginScreen'
+import { useAuth } from './auth/useAuth'
 
 const STORAGE_KEY = 'combat-follow-fighters'
 const EMAIL_CONFIG_KEY = 'combat-follow-email'
@@ -67,6 +69,7 @@ function gridClass(count) {
 }
 
 export default function App() {
+  const { user, signIn, signOut } = useAuth()
   const [tab, setTab] = useState('panel')
   const [fighters, setFighters] = useState(loadFighters)
   const [matchMap, setMatchMap] = useState({})
@@ -289,6 +292,10 @@ export default function App() {
     return a.name.localeCompare(b.name)
   })
 
+  if (!user) {
+    return <LoginScreen onSignIn={signIn} />
+  }
+
   return (
     <>
       <Header
@@ -296,6 +303,8 @@ export default function App() {
         lastUpdated={lastUpdated}
         onRefresh={handleManualRefresh}
         isLoading={isLoading}
+        user={user}
+        onSignOut={signOut}
       />
 
       <nav className="nav-tabs">
