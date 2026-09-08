@@ -13,6 +13,8 @@ import { useAuth } from './auth/useAuth'
 
 const STORAGE_KEY = 'combat-follow-fighters'
 const EMAIL_CONFIG_KEY = 'combat-follow-email'
+const EVENTS_KEY = 'combat-follow-events'
+const ACTIVE_EVENT_KEY = 'combat-follow-active-event'
 
 function decodeImportParam(params) {
   const z = params.get('importz')
@@ -49,6 +51,57 @@ function saveFighters(fighters) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(fighters))
 }
 
+function loadEvents() {
+  try {
+    const raw = localStorage.getItem(EVENTS_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function saveEvents(events) {
+  localStorage.setItem(EVENTS_KEY, JSON.stringify(events))
+}
+
+function loadActiveEventId() {
+  try {
+    return localStorage.getItem(ACTIVE_EVENT_KEY) || null
+  } catch {
+    return null
+  }
+}
+
+// Ensure there is always at least one event and every fighter is tagged with an
+// eventId. Migrates legacy data (flat fighter list, no events) into a default
+// event. Returns { events, fighters, activeEventId } — possibly unchanged.
+function migrateEvents(events, fighters, activeEventId) {
+  let nextEvents = events
+  let nextFighters = fighters
+
+  if (nextEvents.length === 0) {
+    const hadFighters = nextFighters.length > 0
+    const defaultEvent = { id: crypto.randomUUID(), name: hadFighters ? 'Mi evento' : 'Evento 1' }
+    nextEvents = [defaultEvent]
+    // Attach any untagged fighters to the default event.
+    nextFighters = nextFighters.map((f) => (f.eventId ? f : { ...f, eventId: defaultEvent.id }))
+    activeEventId = defaultEvent.id
+  } else {
+    // Tag any fighters missing an eventId (or pointing to a deleted event).
+    const validIds = new Set(nextEvents.map((e) => e.id))
+    const fallbackId = nextEvents[0].id
+    nextFighters = nextFighters.map((f) =>
+      validIds.has(f.eventId) ? f : { ...f, eventId: fallbackId }
+    )
+  }
+
+  if (!activeEventId || !nextEvents.some((e) => e.id === activeEventId)) {
+    activeEventId = nextEvents[0].id
+  }
+
+  return { events: nextEvents, fighters: nextFighters, activeEventId }
+}
+
 function vibrate() {
   if (!navigator.vibrate) return
   navigator.vibrate([300, 100, 300, 100, 300])
@@ -73,7 +126,11 @@ function gridClass(count) {
 export default function App() {
   const { user, status, isAdmin, credential, checking, error: authError, signIn, signOut } = useAuth()
   const [tab, setTab] = useState('panel')
-  const [fighters, setFighters] = useState(loadFighters)
+  // Run migration once so events/fighters/active id are consistent from render 1.
+  const [seed] = useState(() => migrateEvents(loadEvents(), loadFighters(), loadActiveEventId()))
+  const [fighters, setFighters] = useState(seed.fighters)
+  const [events, setEvents] = useState(seed.events)
+  const [activeEventId, setActiveEventId] = useState(seed.activeEventId)
   const [matchMap, setMatchMap] = useState({})
   const [urgentIds, setUrgentIds] = useState(new Set())
   const [isLoading, setIsLoading] = useState(false)
@@ -89,13 +146,26 @@ export default function App() {
     saveFighters(fighters)
   }, [fighters])
 
+  useEffect(() => {
+    saveEvents(events)
+  }, [events])
+
+  useEffect(() => {
+    if (activeEventId) localStorage.setItem(ACTIVE_EVENT_KEY, activeEventId)
+  }, [activeEventId])
+
+  // Fighters belonging to the currently selected event.
+  const activeFighters = fighters.filter((f) => f.eventId === activeEventId)
+
   const refresh = useCallback(async () => {
-    if (fighters.length === 0) return
+    // Only refresh the fighters of the active event.
+    const toScrape = fighters.filter((f) => f.eventId === activeEventId)
+    if (toScrape.length === 0) return
     if (isLoadingRef.current) return  // debounce — reliable ref, never stale
     isLoadingRef.current = true
     setIsLoading(true)
     try {
-      const results = await scrapeAllFighters(fighters)
+      const results = await scrapeAllFighters(toScrape)
       const now = new Date()
 
       const newUrgentIds = new Set()
@@ -127,52 +197,82 @@ export default function App() {
       isLoadingRef.current = false
       setIsLoading(false)
     }
-  }, [fighters])
+  }, [fighters, activeEventId])
 
   useEffect(() => {
     clearInterval(intervalRef.current)
-    if (fighters.length === 0) return
+    if (activeFighters.length === 0) return
     intervalRef.current = setInterval(refresh, intervalSec * 1000)
     return () => clearInterval(intervalRef.current)
-  }, [refresh, intervalSec, fighters.length])
+  }, [refresh, intervalSec, activeFighters.length])
+
+  // Import fighters from a decoded payload (array | { fighters, email, eventName }).
+  // If the payload names an event, import into that event (creating it if needed)
+  // and make it active; otherwise import into the current active event.
+  // Dedupe is scoped to the target event. Returns the number of fighters added.
+  const importDecoded = useCallback((decoded) => {
+    if (!decoded) return 0
+    const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
+    const importedEmail = !Array.isArray(decoded) ? decoded.email : null
+    const eventName = !Array.isArray(decoded) ? (decoded.eventName || '').trim() : ''
+
+    // Resolve the target event.
+    let targetId = activeEventId
+    if (eventName) {
+      const existing = events.find((e) => e.name.toLowerCase() === eventName.toLowerCase())
+      if (existing) {
+        targetId = existing.id
+      } else {
+        const newEvent = { id: crypto.randomUUID(), name: eventName }
+        targetId = newEvent.id
+        setEvents((prev) => [...prev, newEvent])
+      }
+      setActiveEventId(targetId)
+    }
+
+    const fighterKey = (f) => f.trackMode === 'fight'
+      ? `fight:${f.matchlistUrl}:${f.mat}:${f.fightNum}`
+      : f.bracketUrl
+    const existingKeys = new Set(
+      fighters.filter((f) => f.eventId === targetId).map(fighterKey)
+    )
+    const toAdd = importedFighters
+      .filter((f) => !existingKeys.has(fighterKey(f)))
+      .map((f) => ({ ...f, id: crypto.randomUUID(), eventId: targetId }))
+    if (toAdd.length > 0) setFighters((prev) => [...prev, ...toAdd])
+
+    if (importedEmail?.serviceId) {
+      setEmailConfig(importedEmail)
+      localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(importedEmail))
+    }
+    return toAdd.length
+  }, [activeEventId, events, fighters])
 
   // On load: check for ?import= / ?importz= param and merge fighters from QR
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('import') || params.get('importz')) {
       try {
-        const decoded = decodeImportParam(params)
-        // Support both old format (array) and new format ({ fighters, email })
-        const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
-        const importedEmail = !Array.isArray(decoded) ? decoded.email : null
-
-        if (importedFighters.length > 0) {
-          const newFighters = importedFighters.map((f) => ({ ...f, id: crypto.randomUUID() }))
-          setFighters((prev) => {
-            const fighterKey = f => f.trackMode === 'fight'
-              ? `fight:${f.matchlistUrl}:${f.mat}:${f.fightNum}`
-              : f.bracketUrl
-            const existingKeys = new Set(prev.map(fighterKey))
-            const toAdd = newFighters.filter((f) => !existingKeys.has(fighterKey(f)))
-            return [...prev, ...toAdd]
-          })
-        }
-        if (importedEmail && importedEmail.serviceId) {
-          setEmailConfig(importedEmail)
-          localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(importedEmail))
-        }
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time import on mount
+        importDecoded(decodeImportParam(params))
       } catch { /* ignore bad param */ }
       // Clean the URL without reloading
       window.history.replaceState({}, '', window.location.pathname)
     }
-    if (fighters.length > 0) refresh()
+    refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function clearAllFighters() {
-    if (!window.confirm('¿Eliminar todos los luchadores?')) return
-    setFighters([])
-    setMatchMap({})
+    const ev = events.find((e) => e.id === activeEventId)
+    const label = ev ? `«${ev.name}»` : 'este evento'
+    if (!window.confirm(`¿Eliminar todos los luchadores de ${label}?`)) return
+    setFighters((prev) => prev.filter((f) => f.eventId !== activeEventId))
+    setMatchMap((prev) => {
+      const next = { ...prev }
+      for (const f of fighters) if (f.eventId === activeEventId) delete next[f.id]
+      return next
+    })
     setUrgentIds(new Set())
   }
 
@@ -185,8 +285,55 @@ export default function App() {
   }
 
   function addFighter(fighter) {
-    const newFighter = { ...fighter, id: crypto.randomUUID() }
+    const newFighter = { ...fighter, id: crypto.randomUUID(), eventId: activeEventId }
     setFighters((prev) => [...prev, newFighter])
+  }
+
+  function createEvent(name) {
+    const trimmed = (name || '').trim()
+    if (!trimmed) return
+    const newEvent = { id: crypto.randomUUID(), name: trimmed }
+    setEvents((prev) => [...prev, newEvent])
+    setActiveEventId(newEvent.id)
+    setMatchMap({})
+    setUrgentIds(new Set())
+  }
+
+  function renameEvent(id, name) {
+    const trimmed = (name || '').trim()
+    if (!trimmed) return
+    setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, name: trimmed } : e)))
+  }
+
+  function deleteEvent(id) {
+    const ev = events.find((e) => e.id === id)
+    if (!ev) return
+    if (!window.confirm(`¿Eliminar el evento «${ev.name}» y todos sus luchadores?`)) return
+    setFighters((prev) => prev.filter((f) => f.eventId !== id))
+    setMatchMap((prev) => {
+      const next = { ...prev }
+      for (const f of fighters) if (f.eventId === id) delete next[f.id]
+      return next
+    })
+    setEvents((prev) => {
+      const remaining = prev.filter((e) => e.id !== id)
+      if (remaining.length === 0) {
+        const fresh = { id: crypto.randomUUID(), name: 'Evento 1' }
+        setActiveEventId(fresh.id)
+        return [fresh]
+      }
+      if (id === activeEventId) setActiveEventId(remaining[0].id)
+      return remaining
+    })
+    setUrgentIds(new Set())
+  }
+
+  function selectEvent(id) {
+    if (id === activeEventId) return
+    setActiveEventId(id)
+    setMatchMap({})
+    setUrgentIds(new Set())
+    setLastUpdated(null)
   }
 
   function removeFighter(id) {
@@ -204,23 +351,7 @@ export default function App() {
       const url = new URL(data)
       const decoded = decodeImportParam(url.searchParams)
       if (!decoded) return
-      const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
-      const importedEmail = !Array.isArray(decoded) ? decoded.email : null
-      if (importedFighters.length > 0) {
-        const newFighters = importedFighters.map((f) => ({ ...f, id: crypto.randomUUID() }))
-        setFighters((prev) => {
-          const fighterKey = f => f.trackMode === 'fight'
-            ? `fight:${f.matchlistUrl}:${f.mat}:${f.fightNum}`
-            : f.bracketUrl
-          const existingKeys = new Set(prev.map(fighterKey))
-          const toAdd = newFighters.filter((f) => !existingKeys.has(fighterKey(f)))
-          return [...prev, ...toAdd]
-        })
-      }
-      if (importedEmail?.serviceId) {
-        setEmailConfig(importedEmail)
-        localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(importedEmail))
-      }
+      importDecoded(decoded)
     } catch {
       alert('QR inválido o no reconocido.')
     }
@@ -230,25 +361,8 @@ export default function App() {
     try {
       const urlObj = new URL(text.trim())
       const decoded = decodeImportParam(urlObj.searchParams)
-      if (!decoded) { alert('El enlace no contiene datos de importación.'); return }
-      const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
-      const importedEmail = !Array.isArray(decoded) ? decoded.email : null
-      if (importedFighters.length > 0) {
-        const newFighters = importedFighters.map((f) => ({ ...f, id: crypto.randomUUID() }))
-        setFighters((prev) => {
-          const fighterKey = f => f.trackMode === 'fight'
-            ? `fight:${f.matchlistUrl}:${f.mat}:${f.fightNum}`
-            : f.bracketUrl
-          const existingKeys = new Set(prev.map(fighterKey))
-          const toAdd = newFighters.filter((f) => !existingKeys.has(fighterKey(f)))
-          return [...prev, ...toAdd]
-        })
-      }
-      if (importedEmail?.serviceId) {
-        setEmailConfig(importedEmail)
-        localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(importedEmail))
-      }
-      return importedFighters.length
+      if (!decoded) { alert('El enlace no contiene datos de importación.'); return 0 }
+      return importDecoded(decoded)
     } catch {
       alert('Enlace inválido.')
       return 0
@@ -260,27 +374,29 @@ export default function App() {
   }
 
   async function activateServerMonitoring() {
-    if (!fighters.length) return alert('No hay luchadores configurados.')
+    if (!activeFighters.length) return alert('No hay luchadores en este evento.')
     if (!emailConfig.serviceId) return alert('Configura las notificaciones de email primero.')
+    const ev = events.find((e) => e.id === activeEventId)
     try {
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fighters, emailConfig }),
+        body: JSON.stringify({ fighters: activeFighters, emailConfig }),
       })
       const data = await res.json()
-      if (data.ok) alert(`✅ Monitoreo activado para ${data.count} luchadores.\n\nEl servidor revisará los horarios cada 2 minutos y te enviará un email si hay cambios.`)
+      if (data.ok) alert(`✅ Monitoreo activado para ${data.count} luchadores${ev ? ` de «${ev.name}»` : ''}.\n\nEl servidor revisará los horarios cada 2 minutos y te enviará un email si hay cambios.\n\nNota: el servidor monitorea un solo evento a la vez (el último que actives).`)
       else alert('Error al activar: ' + data.error)
     } catch (e) {
       alert('Error de conexión: ' + e.message)
     }
   }
 
-  const isMonitoring = fighters.length > 0
-  const showSlowNotice = isLoading && fighters.length >= 6
+  const activeEvent = events.find((e) => e.id === activeEventId) || null
+  const isMonitoring = activeFighters.length > 0
+  const showSlowNotice = isLoading && activeFighters.length >= 6
 
   // Sort fighters by next match time (earliest first, no-time goes to bottom)
-  const sortedFighters = [...fighters].sort((a, b) => {
+  const sortedFighters = [...activeFighters].sort((a, b) => {
     const dA = matchMap[a.id]
     const dB = matchMap[b.id]
     const liveA = dA?.status === 'live' ? 0 : 1
@@ -335,7 +451,7 @@ export default function App() {
           className={`nav-tab${tab === 'setup' ? ' active' : ''}`}
           onClick={() => setTab('setup')}
         >
-          Setup {fighters.length > 0 && `(${fighters.length})`}
+          Setup {activeFighters.length > 0 && `(${activeFighters.length})`}
         </button>
         {isAdmin && (
           <button
@@ -353,7 +469,13 @@ export default function App() {
 
       {tab === 'setup' && (
         <SetupPanel
-          fighters={fighters}
+          fighters={activeFighters}
+          events={events}
+          activeEventId={activeEventId}
+          onSelectEvent={selectEvent}
+          onCreateEvent={createEvent}
+          onRenameEvent={renameEvent}
+          onDeleteEvent={deleteEvent}
           onAdd={addFighter}
           onRemove={removeFighter}
           onEdit={editFighter}
@@ -372,6 +494,18 @@ export default function App() {
       {tab === 'panel' && (
         <div className="panel-screen">
           <div className="panel-toolbar">
+            {events.length > 1 && (
+              <select
+                className="event-select"
+                value={activeEventId || ''}
+                onChange={(e) => selectEvent(e.target.value)}
+                aria-label="Evento"
+              >
+                {events.map((ev) => (
+                  <option key={ev.id} value={ev.id}>{ev.name}</option>
+                ))}
+              </select>
+            )}
             <label>Actualizar cada:</label>
             <select
               value={intervalSec}
@@ -384,7 +518,7 @@ export default function App() {
               ))}
             </select>
             <div className="spacer" />
-            {fighters.length > 0 && (
+            {activeFighters.length > 0 && (
               <button className="btn-ghost" style={{ fontSize: 11, minHeight: 32 }} onClick={activateServerMonitoring}>
                 ⚙ Servidor
               </button>
@@ -397,9 +531,9 @@ export default function App() {
             </div>
           )}
 
-          {fighters.length === 0 ? (
+          {activeFighters.length === 0 ? (
             <div className="empty-state">
-              <h2>Sin luchadores</h2>
+              <h2>Sin luchadores{activeEvent ? ` en «${activeEvent.name}»` : ''}</h2>
               <p>Agrega luchadores en la pestaña Setup para comenzar a monitorear.</p>
               <button className="btn-primary" onClick={() => setTab('setup')}>
                 Ir a Setup
@@ -407,7 +541,7 @@ export default function App() {
             </div>
           ) : (
             <div className="cards-scroll">
-              <div className={`cards-grid ${gridClass(fighters.length)}`}>
+              <div className={`cards-grid ${gridClass(activeFighters.length)}`}>
                 {sortedFighters.map((fighter) => (
                   <FighterCard
                     key={fighter.id}
@@ -427,7 +561,7 @@ export default function App() {
       )}
 
       {showQR && (
-        <QRModal fighters={fighters} emailConfig={emailConfig} onClose={() => setShowQR(false)} />
+        <QRModal fighters={activeFighters} eventName={activeEvent?.name} emailConfig={emailConfig} onClose={() => setShowQR(false)} />
       )}
       {showScanner && (
         <QRScanner onResult={handleScanResult} onClose={() => setShowScanner(false)} />

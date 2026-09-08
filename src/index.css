@@ -963,6 +963,47 @@ button:active {
   justify-content: center;
 }
 
+/* ─── Event bar (setup) & selector ────────────────────── */
+.event-bar {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.event-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.event-bar-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  justify-content: flex-end;
+}
+.event-select {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  min-height: 40px;
+  outline: none;
+  cursor: pointer;
+  max-width: 100%;
+}
+/* Inside the live panel toolbar, keep the event selector compact. */
+.panel-toolbar .event-select {
+  font-size: 13px;
+  padding: 6px 10px;
+  min-height: 36px;
+  height: 36px;
+  max-width: 42%;
+}
+
 /* ─── Status screen (pending / blocked) ───────────────── */
 .status-badge {
   display: inline-block;

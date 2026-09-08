@@ -13,11 +13,30 @@ function buildWatchUrl(fighters) {
   return `https://combat-follow.vercel.app/api/watch?f=${encoded}`
 }
 
-export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner, onClearAll, onPasteImport }) {
+export default function SetupPanel({ fighters, events = [], activeEventId, onSelectEvent, onCreateEvent, onRenameEvent, onDeleteEvent, onAdd, onRemove, onEdit, emailConfig, onEmailConfig, onShowQR, onShowScanner, onClearAll, onPasteImport }) {
   const [addMode, setAddMode] = useState('fighter') // 'fighter' | 'fight'
   const [pasteLink, setPasteLink] = useState('')
   const [pasteSuccess, setPasteSuccess] = useState(false)
   const [watchCopied, setWatchCopied] = useState(false)
+
+  // event management
+  const [showNewEvent, setShowNewEvent] = useState(false)
+  const [newEventName, setNewEventName] = useState('')
+  const activeEvent = events.find((e) => e.id === activeEventId) || null
+
+  function handleCreateEvent() {
+    const name = newEventName.trim()
+    if (!name) return
+    onCreateEvent(name)
+    setNewEventName('')
+    setShowNewEvent(false)
+  }
+
+  function handleRenameEvent() {
+    if (!activeEvent) return
+    const name = window.prompt('Nuevo nombre del evento:', activeEvent.name)
+    if (name && name.trim()) onRenameEvent(activeEvent.id, name.trim())
+  }
 
   function copyWatchUrl() {
     const url = buildWatchUrl(fighters)
@@ -117,6 +136,53 @@ export default function SetupPanel({ fighters, onAdd, onRemove, onEdit, emailCon
 
   return (
     <div className="setup-panel">
+      {/* ── Event bar ── */}
+      <div className="event-bar">
+        <div className="event-bar-row">
+          <select
+            className="event-select"
+            value={activeEventId || ''}
+            onChange={(e) => onSelectEvent(e.target.value)}
+            aria-label="Evento activo"
+            style={{ flex: 1 }}
+          >
+            {events.map((ev) => (
+              <option key={ev.id} value={ev.id}>{ev.name}</option>
+            ))}
+          </select>
+          <button className="btn-ghost" style={{ minHeight: 40, fontSize: 12, whiteSpace: 'nowrap' }} onClick={() => setShowNewEvent((v) => !v)}>
+            ＋ Evento
+          </button>
+        </div>
+        {showNewEvent && (
+          <div className="event-bar-row" style={{ marginTop: 8 }}>
+            <input
+              type="text"
+              placeholder="Nombre del evento…"
+              value={newEventName}
+              onChange={(e) => setNewEventName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateEvent() }}
+              autoFocus
+              autoComplete="off"
+              style={{ flex: 1, background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 14, padding: '10px 12px', outline: 'none' }}
+            />
+            <button className="btn-primary" style={{ minHeight: 40, fontSize: 12 }} disabled={!newEventName.trim()} onClick={handleCreateEvent}>
+              Crear
+            </button>
+          </div>
+        )}
+        {activeEvent && (
+          <div className="event-bar-actions">
+            <button className="btn-ghost" style={{ minHeight: 32, fontSize: 11 }} onClick={handleRenameEvent}>
+              ✎ Renombrar
+            </button>
+            <button className="btn-danger" style={{ minHeight: 32, fontSize: 11 }} onClick={() => onDeleteEvent(activeEvent.id)}>
+              🗑 Eliminar evento
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* ── Mode toggle ── */}
       <div className="add-fighter-form">
         <div style={{ display: 'flex', gap: 6 }}>

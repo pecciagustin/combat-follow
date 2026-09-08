@@ -79,6 +79,22 @@ export function useAuth() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
+  // Dev-only bypass so the app is usable locally where /api/auth does not run.
+  // Guarded by import.meta.env.DEV: this branch is dead code in production builds,
+  // so it can never bypass auth on the deployed site regardless of env vars.
+  if (import.meta.env.DEV && import.meta.env.VITE_DEV_NO_AUTH === 'true') {
+    return {
+      user: { email: 'local@dev.test', name: 'Local Dev', picture: '' },
+      status: 'approved',
+      isAdmin: false,
+      credential: null,
+      checking: false,
+      error: '',
+      signIn,
+      signOut,
+    }
+  }
+
   return {
     user: session?.user || null,
     status: session?.status || null,
