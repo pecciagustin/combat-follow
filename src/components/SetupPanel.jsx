@@ -453,7 +453,7 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
       <div className="add-fighter-form" style={{ marginTop: 24 }}>
         <h2>Notificaciones por Email</h2>
         <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
-          Crea una cuenta gratis en <strong style={{ color: 'var(--text)' }}>emailjs.com</strong> y pega tus credenciales aquí para recibir emails cuando haya cambios de horario o un luchador entre en combate.
+          Crea una cuenta gratis en <strong style={{ color: 'var(--text)' }}>emailjs.com</strong> y pega tus credenciales aquí para recibir un email cuando falten menos de 10 minutos para un combate.
         </p>
         {[
           { key: 'toEmail', label: 'Tu email', placeholder: 'tu@gmail.com', type: 'email' },

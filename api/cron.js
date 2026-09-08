@@ -112,15 +112,8 @@ export default async function handler(req) {
 
       const { time, matchRef } = data
       const key = fighter.id
-      const prev = state[key] || {}
-      const changes = []
 
-      if (prev.matchRef && matchRef && prev.matchRef !== matchRef)
-        changes.push(`Nuevo combate: ${prev.matchRef} → ${matchRef}`)
-
-      if (prev.time && time && prev.time !== time)
-        changes.push(`Hora: ${prev.time} → ${time}`)
-
+      // Email ONLY when the fight is under 10 minutes away (once per fight).
       const alertKey = `${key}-${matchRef || time}`
       if (time && !state[`alerted:${alertKey}`]) {
         const [h, m] = time.split(':').map(Number)
@@ -129,14 +122,14 @@ export default async function handler(req) {
         fight.setHours(h, m, 0, 0)
         const mins = Math.round((fight - now) / 60000)
         if (mins >= 0 && mins < 10) {
-          changes.push(`⚡ COMBATE EN MENOS DE 10 MIN — a las ${time}`)
+          await sendEmail(
+            emailConfig,
+            fighter.name,
+            `⚡ Combate en ${mins} min — a las ${time}${matchRef ? ` (combate ${matchRef})` : ''}`
+          )
           newState[`alerted:${alertKey}`] = true
+          log.push(`${fighter.name}: alerta 10 min (${time})`)
         }
-      }
-
-      if (changes.length) {
-        await sendEmail(emailConfig, fighter.name, changes.join('\n'))
-        log.push(`${fighter.name}: ${changes.join(', ')}`)
       }
 
       newState[key] = { time, matchRef, updatedAt: Date.now() }
