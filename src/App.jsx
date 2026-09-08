@@ -7,6 +7,8 @@ import { scrapeAllFighters } from './api/scrape'
 import QRModal from './components/QRModal'
 import QRScanner from './components/QRScanner'
 import LoginScreen from './components/LoginScreen'
+import StatusScreen from './components/StatusScreen'
+import AdminPanel from './components/AdminPanel'
 import { useAuth } from './auth/useAuth'
 
 const STORAGE_KEY = 'combat-follow-fighters'
@@ -69,7 +71,7 @@ function gridClass(count) {
 }
 
 export default function App() {
-  const { user, signIn, signOut } = useAuth()
+  const { user, status, isAdmin, credential, checking, error: authError, signIn, signOut } = useAuth()
   const [tab, setTab] = useState('panel')
   const [fighters, setFighters] = useState(loadFighters)
   const [matchMap, setMatchMap] = useState({})
@@ -292,8 +294,23 @@ export default function App() {
     return a.name.localeCompare(b.name)
   })
 
+  if (checking) {
+    return (
+      <div className="login-screen">
+        <div className="login-card">
+          <div className="login-title">COMBAT FOLLOW</div>
+          <p className="login-text">Cargando…</p>
+        </div>
+      </div>
+    )
+  }
+
   if (!user) {
-    return <LoginScreen onSignIn={signIn} />
+    return <LoginScreen onCredential={signIn} error={authError} />
+  }
+
+  if (status !== 'approved') {
+    return <StatusScreen status={status} user={user} onSignOut={signOut} />
   }
 
   return (
@@ -320,7 +337,19 @@ export default function App() {
         >
           Setup {fighters.length > 0 && `(${fighters.length})`}
         </button>
+        {isAdmin && (
+          <button
+            className={`nav-tab${tab === 'admin' ? ' active' : ''}`}
+            onClick={() => setTab('admin')}
+          >
+            Admin
+          </button>
+        )}
       </nav>
+
+      {tab === 'admin' && isAdmin && (
+        <AdminPanel credential={credential} adminEmail={user.email} />
+      )}
 
       {tab === 'setup' && (
         <SetupPanel

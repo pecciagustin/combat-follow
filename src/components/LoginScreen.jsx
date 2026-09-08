@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { GOOGLE_CLIENT_ID, decodeJwt, loadGsi } from '../auth/googleAuth'
+import { GOOGLE_CLIENT_ID, loadGsi } from '../auth/googleAuth'
 import hero from '../assets/hero.png'
 
-export default function LoginScreen({ onSignIn }) {
+export default function LoginScreen({ onCredential, error: externalError }) {
   const buttonRef = useRef(null)
   const [error, setError] = useState(
     GOOGLE_CLIENT_ID ? '' : 'Falta configurar VITE_GOOGLE_CLIENT_ID.'
   )
+  const [verifying, setVerifying] = useState(false)
 
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return
@@ -19,17 +20,11 @@ export default function LoginScreen({ onSignIn }) {
         google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           callback: (response) => {
-            const profile = decodeJwt(response.credential)
-            if (!profile) {
-              setError('No se pudo leer la respuesta de Google.')
-              return
-            }
-            onSignIn({
-              sub: profile.sub,
-              name: profile.name,
-              email: profile.email,
-              picture: profile.picture,
-            })
+            setError('')
+            setVerifying(true)
+            Promise.resolve(onCredential(response.credential))
+              .catch(() => { /* error surfaced via externalError */ })
+              .finally(() => { if (!cancelled) setVerifying(false) })
           },
         })
 
@@ -41,13 +36,14 @@ export default function LoginScreen({ onSignIn }) {
           logo_alignment: 'left',
         })
 
-        // Optional One Tap prompt for returning users.
         google.accounts.id.prompt()
       })
       .catch(() => setError('No se pudo cargar Google Sign-In. Revisa tu conexión.'))
 
     return () => { cancelled = true }
-  }, [onSignIn])
+  }, [onCredential])
+
+  const shownError = error || externalError
 
   return (
     <div className="login-screen">
@@ -59,9 +55,10 @@ export default function LoginScreen({ onSignIn }) {
         </div>
         <p className="login-text">Inicia sesión para seguir tus luchadores.</p>
 
-        <div className="login-btn-wrap" ref={buttonRef} />
+        <div className="login-btn-wrap" ref={buttonRef} style={verifying ? { display: 'none' } : undefined} />
+        {verifying && <p className="login-text">Verificando…</p>}
 
-        {error && <p className="login-error">{error}</p>}
+        {shownError && <p className="login-error">{shownError}</p>}
       </div>
     </div>
   )

@@ -49,7 +49,8 @@ export function decodeJwt(token) {
   }
 }
 
-export function loadStoredUser() {
+// The stored session is { user, credential, status, isAdmin }.
+export function loadStoredSession() {
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY)
     return raw ? JSON.parse(raw) : null
@@ -58,7 +59,32 @@ export function loadStoredUser() {
   }
 }
 
-export function saveStoredUser(user) {
-  if (user) localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user))
+export function saveStoredSession(session) {
+  if (session) localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
   else localStorage.removeItem(AUTH_STORAGE_KEY)
+}
+
+// Send the Google credential to the backend, which verifies it and returns the
+// user's approval status. Throws on invalid/expired token or network error.
+export async function verifyWithServer(credential) {
+  const res = await fetch('/api/auth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'No se pudo verificar la sesión')
+  return data // { ok, status, isAdmin, user }
+}
+
+// Admin-only API. `credential` must belong to the admin account.
+export async function adminApi(credential, action, params = {}) {
+  const res = await fetch('/api/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential, action, ...params }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Error del servidor')
+  return data
 }
