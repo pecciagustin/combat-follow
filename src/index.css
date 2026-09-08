@@ -95,6 +95,10 @@ html, body {
   50% { opacity: 0.3; }
 }
 
+@keyframes cf-spin {
+  to { transform: rotate(360deg); }
+}
+
 .header-actions {
   display: flex;
   align-items: center;
@@ -1283,6 +1287,79 @@ button:active {
   color: var(--muted-2);
   margin-top: 18px;
   line-height: 1.5;
+}
+
+/* ─── Success overlay (monitoring activated) ──────────── */
+.success-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: var(--accent);
+  color: var(--lime-ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 30px;
+  padding-top: calc(30px + env(safe-area-inset-top));
+  padding-bottom: calc(30px + env(safe-area-inset-bottom));
+  text-align: center;
+}
+.success-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.success-check {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: var(--lime-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 24px 50px -22px rgba(0, 0, 0, 0.5);
+}
+.success-title {
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-top: 28px;
+}
+.success-text {
+  font-size: 14.5px;
+  color: rgba(19, 22, 8, 0.72);
+  margin-top: 14px;
+  line-height: 1.55;
+  max-width: 290px;
+}
+.success-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(19, 22, 8, 0.10);
+  border: 1px solid rgba(19, 22, 8, 0.16);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-top: 22px;
+}
+.success-note {
+  font-size: 11.5px;
+  color: rgba(19, 22, 8, 0.55);
+  margin-top: 16px;
+}
+.success-btn {
+  width: 100%;
+  max-width: 340px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--lime-ink);
+  color: var(--accent);
+  font-size: 15.5px;
+  font-weight: 600;
 }
 
 /* ─── Scrollbars ──────────────────────────────────────── */

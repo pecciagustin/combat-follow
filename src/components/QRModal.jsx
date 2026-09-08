@@ -1,6 +1,7 @@
 import { QRCodeSVG } from 'qrcode.react'
 import { Component, useState } from 'react'
 import LZString from 'lz-string'
+import { IconClose } from './icons'
 
 class QRErrorBoundary extends Component {
   constructor(props) {
@@ -90,7 +91,7 @@ export default function QRModal({ fighters, eventName, emailConfig, onClose }) {
       <div className="qr-modal" onClick={(e) => e.stopPropagation()}>
         <div className="qr-header">
           <div className="qr-title">Pasar al móvil</div>
-          <button className="qr-close" onClick={onClose}>✕</button>
+          <button className="qr-close" onClick={onClose} aria-label="Cerrar"><IconClose size={16} /></button>
         </div>
         <div className="qr-body" style={{ padding: '1rem' }}>
           {!showLink ? (

@@ -9,6 +9,8 @@ import QRScanner from './components/QRScanner'
 import LoginScreen from './components/LoginScreen'
 import StatusScreen from './components/StatusScreen'
 import AdminPanel from './components/AdminPanel'
+import SuccessOverlay from './components/SuccessOverlay'
+import { IconGear } from './components/icons'
 import { useAuth } from './auth/useAuth'
 
 const STORAGE_KEY = 'combat-follow-fighters'
@@ -153,6 +155,7 @@ export default function App() {
   const [emailConfig, setEmailConfig] = useState(loadEmailConfig)
   const [showQR, setShowQR] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+  const [successInfo, setSuccessInfo] = useState(null)
   const intervalRef = useRef(null)
   const isLoadingRef = useRef(false) // ref-based lock — never stale in closures
 
@@ -398,7 +401,7 @@ export default function App() {
         body: JSON.stringify({ fighters: activeFighters, emailConfig }),
       })
       const data = await res.json()
-      if (data.ok) alert(`✅ Monitoreo activado para ${data.count} luchadores${ev ? ` de «${ev.name}»` : ''}.\n\nEl servidor revisará los horarios cada 2 minutos y te enviará un email si hay cambios.\n\nNota: el servidor monitorea un solo evento a la vez (el último que actives).`)
+      if (data.ok) setSuccessInfo({ eventName: ev?.name || '', count: data.count })
       else alert('Error al activar: ' + data.error)
     } catch (e) {
       alert('Error de conexión: ' + e.message)
@@ -511,8 +514,9 @@ export default function App() {
             </select>
             <div className="spacer" />
             {activeFighters.length > 0 && (
-              <button className="btn-ghost" style={{ fontSize: 11, minHeight: 32 }} onClick={activateServerMonitoring}>
-                ⚙ Servidor
+              <button className="btn-ghost" style={{ fontSize: 12, minHeight: 32, gap: 6 }} onClick={activateServerMonitoring}>
+                <IconGear size={14} />
+                Servidor
               </button>
             )}
           </div>
@@ -577,6 +581,13 @@ export default function App() {
       )}
       {showScanner && (
         <QRScanner onResult={handleScanResult} onClose={() => setShowScanner(false)} />
+      )}
+      {successInfo && (
+        <SuccessOverlay
+          eventName={successInfo.eventName}
+          count={successInfo.count}
+          onClose={() => setSuccessInfo(null)}
+        />
       )}
     </>
   )

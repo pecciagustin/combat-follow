@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { IconRefresh, IconSpinner } from './icons'
 
 export default function Header({ isMonitoring, lastUpdated, onRefresh, isLoading, user, onSignOut }) {
   const timeStr = lastUpdated
@@ -32,10 +33,10 @@ export default function Header({ isMonitoring, lastUpdated, onRefresh, isLoading
           className="btn-icon"
           onClick={onRefresh}
           disabled={isLoading}
-          title="Refresh now"
-          aria-label="Refresh now"
+          title="Actualizar ahora"
+          aria-label="Actualizar ahora"
         >
-          {isLoading ? '⏳' : '↻'}
+          {isLoading ? <IconSpinner size={18} /> : <IconRefresh size={18} />}
         </button>
 
         {user && (

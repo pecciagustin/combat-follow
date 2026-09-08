@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const PLACEMENT_LABEL = { 1: '🥇 1er lugar', 2: '🥈 2do lugar', 3: '🥉 3er lugar' }
+const PLACEMENT_LABEL = { 1: '1er lugar', 2: '2do lugar', 3: '3er lugar' }
 
 function FightTrackCard({ fighter, matchData, isLoading, isUrgent, onNoteChange }) {
   const [expanded, setExpanded] = useState(false)

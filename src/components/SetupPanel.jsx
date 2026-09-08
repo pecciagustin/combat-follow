@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { IconPlus, IconPencil, IconTrash, IconWatch, IconClose, IconScan, IconShare } from './icons'
 
 const selectStyle = { width: '100%', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontFamily: 'inherit', fontSize: 15, padding: '12px 14px', minHeight: 44, outline: 'none' }
 
@@ -150,8 +151,8 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
               <option key={ev.id} value={ev.id}>{ev.name}</option>
             ))}
           </select>
-          <button className="btn-ghost" style={{ minHeight: 40, fontSize: 12, whiteSpace: 'nowrap' }} onClick={() => setShowNewEvent((v) => !v)}>
-            ＋ Evento
+          <button className="btn-ghost" style={{ minHeight: 40, fontSize: 12, whiteSpace: 'nowrap', gap: 5 }} onClick={() => setShowNewEvent((v) => !v)}>
+            <IconPlus size={14} /> Evento
           </button>
         </div>
         {showNewEvent && (
@@ -173,11 +174,11 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
         )}
         {activeEvent && (
           <div className="event-bar-actions">
-            <button className="btn-ghost" style={{ minHeight: 32, fontSize: 11 }} onClick={handleRenameEvent}>
-              ✎ Renombrar
+            <button className="btn-ghost" style={{ minHeight: 32, fontSize: 11, gap: 5 }} onClick={handleRenameEvent}>
+              <IconPencil size={13} /> Renombrar
             </button>
-            <button className="btn-danger" style={{ minHeight: 32, fontSize: 11 }} onClick={() => onDeleteEvent(activeEvent.id)}>
-              🗑 Eliminar evento
+            <button className="btn-danger" style={{ minHeight: 32, fontSize: 11, gap: 5 }} onClick={() => onDeleteEvent(activeEvent.id)}>
+              <IconTrash size={13} /> Eliminar evento
             </button>
           </div>
         )}
@@ -323,17 +324,17 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
             </button>
           )}
           <div style={{ display: 'flex', gap: 6 }}>
-            <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={onShowScanner}>
-              Escanear QR
+            <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12, gap: 5 }} onClick={onShowScanner}>
+              <IconScan size={13} /> Escanear QR
             </button>
             {fighters.length > 0 && (
-              <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={onShowQR}>
-                Compartir enlace
+              <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12, gap: 5 }} onClick={onShowQR}>
+                <IconShare size={13} /> Compartir
               </button>
             )}
             {fighters.length > 0 && (
-              <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12 }} onClick={copyWatchUrl}>
-                {watchCopied ? '✓ Copiado' : '⌚ Watch URL'}
+              <button className="btn-ghost" style={{ minHeight: 36, fontSize: 12, gap: 5 }} onClick={copyWatchUrl}>
+                {watchCopied ? '✓ Copiado' : <><IconWatch size={13} /> Watch URL</>}
               </button>
             )}
           </div>
@@ -437,8 +438,8 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
                         </div>
                         <div className="fighter-item-url">{f.matchlistUrl || f.bracketUrl}</div>
                       </div>
-                      <button className="btn-ghost" onClick={() => startEdit(f)} aria-label={`Editar ${f.name}`}>✎</button>
-                      <button className="btn-danger" onClick={() => onRemove(f.id)} aria-label={`Eliminar ${f.name}`}>✕</button>
+                      <button className="btn-ghost" onClick={() => startEdit(f)} aria-label={`Editar ${f.name}`}><IconPencil size={15} /></button>
+                      <button className="btn-danger" onClick={() => onRemove(f.id)} aria-label={`Eliminar ${f.name}`}><IconClose size={15} /></button>
                     </div>
                   )}
                 </div>
