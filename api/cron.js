@@ -2,61 +2,138 @@ import { Redis } from '@upstash/redis'
 
 export const config = { runtime: 'edge' }
 
-// Same logic as client-side scraper — direct fetch for matchlist (no Jina)
-function deriveMatchlistUrl(fighter) {
-  if (fighter.matchlistUrl) return fighter.matchlistUrl
-  const url = fighter.bracketUrl || ''
-  if (url.includes('/schedule/matchlist')) return url
+// ── Fetch helpers ─────────────────────────────────────
+function fetchWithTimeout(url, opts = {}, ms = 15000) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), ms)
+  return fetch(url, { cache: 'no-store', signal: controller.signal, ...opts })
+    .finally(() => clearTimeout(id))
+}
+
+async function fetchJson(url) {
+  const res = await fetchWithTimeout(url)
+  if (!res.ok) throw new Error(`${res.status}`)
+  return res.json()
+}
+
+function extractEventBase(url) {
   const m = url.match(/(https?:\/\/[^/]+\/(?:[a-z]{2}\/)?event\/\d+)/)
-  if (m) {
-    const firstName = encodeURIComponent(fighter.name.split(' ')[0].toLowerCase())
-    return `${m[1]}/schedule/matchlist?search=${firstName}&club=&catid=0&mat=&country=`
-  }
-  return url
+  return m ? m[1] : null
 }
 
-async function fetchMatchlist(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/html' } })
-  if (!res.ok) throw new Error(`Fetch ${res.status}`)
-  return res.text()
-}
-
-function parseMatchlist(html, fighterName, discipline) {
-  const nameLower = fighterName.toLowerCase()
-  const numbers      = [...html.matchAll(/<div class="number">([^<]+)<\/div>/g)].map(m => ({ pos: m.index, ref: m[1].trim() }))
-  const etas         = [...html.matchAll(/class="eta[^"]*">(\d{1,2}:\d{2})<\/div>/g)].map(m => ({ pos: m.index, time: m[1] }))
-  const participants = [...html.matchAll(/class="participant[^"]*">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, name: m[1].trim() }))
-  const categories   = [...html.matchAll(/class="category-row">\s*([^\n<]+)/g)].map(m => ({ pos: m.index, cat: m[1].trim() }))
-
-  const occurrences = participants.filter(p => p.name.toLowerCase().includes(nameLower))
-  if (!occurrences.length) return null
-
-  let candidates = occurrences
-  if (occurrences.length > 1 && discipline) {
-    const isNoGi = discipline === 'nogi'
-    const isGi = discipline === 'gi'
-    const filtered = occurrences.filter(occ => {
-      const nearCat = categories.filter(c => c.pos < occ.pos).pop()
-      if (!nearCat) return false
-      const c = nearCat.cat.toLowerCase()
-      if (isNoGi) return /no.?gi/i.test(c)
-      if (isGi)   return /\bgi\b/.test(c) && !/no.?gi/i.test(c)
-      return true
+// ── Smoothcomp JSON API (bypasses Cloudflare) ─────────
+async function getSmoothcompMatData(eventBaseUrl) {
+  const categories = await fetchJson(`${eventBaseUrl}/schedule/new/matcategories.json`)
+  const categoryId = categories?.[0]?.id
+  if (!categoryId) throw new Error('No categories')
+  const mats = await fetchJson(`${eventBaseUrl}/schedule/new/mats.json/${categoryId}`)
+  if (!mats?.length) throw new Error('No mats')
+  const results = await Promise.all(
+    mats.map(async (mat) => {
+      try {
+        const matches = await fetchJson(`${eventBaseUrl}/schedule/new/mat/${mat.id}/matches.json`)
+        return { mat, matches: matches || [] }
+      } catch { return null }
     })
-    if (filtered.length) candidates = filtered
-  }
+  )
+  return results.filter(Boolean)
+}
 
-  const withEta = candidates.filter(occ => etas.some(e => e.pos < occ.pos && e.pos > (numbers.filter(n => n.pos < occ.pos).pop()?.pos || 0)))
-  const best = withEta.length
-    ? withEta[withEta.length - 1]
-    : candidates[candidates.length - 1]
-
-  const nearNum = numbers.filter(n => n.pos < best.pos).pop()
-  const nearEta = etas.filter(e => e.pos < best.pos).pop()
+function timing(match) {
+  const state = match.state || 'seeded'
   return {
-    time: nearEta?.time || null,
-    matchRef: nearNum?.ref || null,
+    ref: String(match.mat_match_nr || match.match_nr || ''),
+    startMs: match.estimated_start ? new Date(match.estimated_start).getTime() : null,
+    isFinished: ['finished', 'decided', 'wo'].includes(state),
+    isRunning: state === 'running',
   }
+}
+
+function findFighterTiming(matData, name, discipline) {
+  const nameLower = name.toLowerCase()
+  const all = []
+  for (const { matches } of matData) {
+    for (const match of matches) {
+      const group = match.group || ''
+      if (discipline === 'nogi' && !/no.?gi/i.test(group)) continue
+      if (discipline === 'gi' && (/no.?gi/i.test(group) || !/\bgi\b/i.test(group))) continue
+      const seats = match.seats || []
+      if (!seats.find((s) => (s.name || '').toLowerCase().includes(nameLower))) continue
+      all.push(timing(match))
+    }
+  }
+  if (!all.length) return null
+  all.sort((a, b) => (a.startMs ?? Infinity) - (b.startMs ?? Infinity))
+  return all.find((m) => m.isRunning) || all.find((m) => !m.isFinished) || all[all.length - 1]
+}
+
+function findCoordTiming(matData, mat, fightNum) {
+  const matStr = String(mat), fightStr = String(fightNum), fullRef = `${matStr}-${fightStr}`
+  for (const { mat: matObj, matches } of matData) {
+    for (const match of matches) {
+      const matchRef = String(match.mat_match_nr || '')
+      const matName = String(matObj.name || '')
+      if (matchRef !== fullRef && !(matchRef === fightStr && (matName === matStr || matName.includes(matStr)))) continue
+      return timing(match)
+    }
+  }
+  return null
+}
+
+// ── bjjcompsystem (IBJJF) — server-side rendered, no Cloudflare ──
+function parseBjjTiming(html, fighterName, mat, fightNum, byCoord) {
+  const fightRe = /FIGHT\s+(\d+):<\/span>\s*Mat\s+(\d+)<\/div>\s*<div[^>]*>([^<]+)<\/div>/g
+  const blocks = []
+  let fm
+  while ((fm = fightRe.exec(html)) !== null) {
+    const fNum = fm[1], fMat = fm[2]
+    const t = fm[3].trim().match(/at\s+(\d+):(\d+)\s*(AM|PM)/i)
+    let startMs = null
+    if (t) {
+      let h = parseInt(t[1])
+      const period = t[3].toUpperCase()
+      if (period === 'PM' && h !== 12) h += 12
+      if (period === 'AM' && h === 12) h = 0
+      const d = new Date()
+      d.setHours(h, parseInt(t[2]), 0, 0)
+      startMs = d.getTime()
+    }
+    const blockStart = fm.index
+    const block = html.slice(blockStart, Math.min(html.length, fightRe.lastIndex + 1500))
+    const names = [...block.matchAll(/class='match-card__competitor-name'>([^<]+)</g)].map((m) => m[1].trim())
+    const isFinished = block.includes('match-competitor--loser')
+    blocks.push({ ref: `${fMat}-${fNum}`, fNum, fMat, startMs, isFinished, names })
+  }
+  if (byCoord) {
+    const b = blocks.find((x) => x.fNum === String(fightNum) && x.fMat === String(mat))
+    return b ? { ref: b.ref, startMs: b.startMs, isFinished: b.isFinished, isRunning: false } : null
+  }
+  const nl = fighterName.toLowerCase()
+  const mine = blocks
+    .filter((b) => b.names.length <= 2 && b.names.some((n) => n.toLowerCase().includes(nl)))
+    .sort((a, b) => parseInt(a.fNum) - parseInt(b.fNum))
+  if (!mine.length) return null
+  const next = mine.find((b) => !b.isFinished) || mine[mine.length - 1]
+  return { ref: next.ref, startMs: next.startMs, isFinished: next.isFinished, isRunning: false }
+}
+
+async function getFighterTiming(fighter, smoothcompCache) {
+  const url = fighter.matchlistUrl || fighter.bracketUrl || ''
+  if (url.match(/smoothcomp\.com/) && !url.includes('bjjcompsystem.com')) {
+    const base = extractEventBase(url)
+    const matData = base ? smoothcompCache[base] : null
+    if (!matData) throw new Error('sin datos del evento (JSON)')
+    return fighter.trackMode === 'fight'
+      ? findCoordTiming(matData, fighter.mat, fighter.fightNum)
+      : findFighterTiming(matData, fighter.name, fighter.discipline)
+  }
+  if (url.includes('bjjcompsystem.com')) {
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/html' } }, 12000)
+    if (!res.ok) throw new Error(`Fetch ${res.status}`)
+    const html = await res.text()
+    return parseBjjTiming(html, fighter.name, fighter.mat, fighter.fightNum, fighter.trackMode === 'fight')
+  }
+  throw new Error('fuente no soportada en el cron')
 }
 
 async function sendEmail(emailConfig, fighterName, changes) {
@@ -80,6 +157,15 @@ async function sendEmail(emailConfig, fighterName, changes) {
 
 export default async function handler(req) {
   try {
+    // Optional protection: if CRON_SECRET is set, require ?key= or Bearer token.
+    const secret = process.env.CRON_SECRET
+    if (secret) {
+      const provided =
+        new URL(req.url).searchParams.get('key') ||
+        (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+      if (provided !== secret) return new Response('Unauthorized', { status: 401 })
+    }
+
     const redis = new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -94,54 +180,50 @@ export default async function handler(req) {
     const newState = { ...state }
     const log = []
 
-    // Fetch all fighters in parallel — same as client-side
-    const fighterResults = await Promise.all(fighters.map(async (fighter) => {
-      try {
-        const matchlistUrl = deriveMatchlistUrl(fighter)
-        if (!matchlistUrl) return { fighter, error: 'no URL' }
-        const html = await fetchMatchlist(matchlistUrl)
-        const data = parseMatchlist(html, fighter.name, fighter.discipline)
-        return { fighter, data, error: data ? null : 'not found' }
-      } catch (e) {
-        return { fighter, data: null, error: e.message }
-      }
+    // Pre-fetch smoothcomp event data once per event via JSON API.
+    const bases = [...new Set(
+      fighters
+        .map((f) => f.matchlistUrl || f.bracketUrl || '')
+        .filter((u) => u.match(/smoothcomp\.com/) && !u.includes('bjjcompsystem.com'))
+        .map(extractEventBase)
+        .filter(Boolean)
+    )]
+    const smoothcompCache = {}
+    await Promise.all(bases.map(async (b) => {
+      try { smoothcompCache[b] = await getSmoothcompMatData(b) }
+      catch { smoothcompCache[b] = null }
     }))
 
-    for (const { fighter, data, error } of fighterResults) {
-      if (error || !data) { log.push(`${fighter.name}: ${error}`); continue }
+    const results = await Promise.all(fighters.map(async (fighter) => {
+      try { return { fighter, data: await getFighterTiming(fighter, smoothcompCache) } }
+      catch (e) { return { fighter, data: null, error: e.message } }
+    }))
 
-      const { time, matchRef } = data
+    const now = Date.now()
+    for (const { fighter, data, error } of results) {
+      if (error || !data) { log.push(`${fighter.name}: ${error || 'sin combate'}`); continue }
       const key = fighter.id
+      const alertKey = `${key}-${data.ref || data.startMs}`
 
-      // Email ONLY when the fight is under 10 minutes away (once per fight).
-      const alertKey = `${key}-${matchRef || time}`
-      if (time && !state[`alerted:${alertKey}`]) {
-        const [h, m] = time.split(':').map(Number)
-        const now = new Date()
-        const fight = new Date(now)
-        fight.setHours(h, m, 0, 0)
-        const mins = Math.round((fight - now) / 60000)
+      if (data.startMs && !data.isFinished && !state[`alerted:${alertKey}`]) {
+        const mins = Math.round((data.startMs - now) / 60000)
         if (mins >= 0 && mins < 10) {
-          await sendEmail(
-            emailConfig,
-            fighter.name,
-            `⚡ Combate en ${mins} min — a las ${time}${matchRef ? ` (combate ${matchRef})` : ''}`
-          )
+          const hm = new Date(data.startMs).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+          await sendEmail(emailConfig, fighter.name, `⚡ Combate en ${mins} min — a las ${hm}${data.ref ? ` (combate ${data.ref})` : ''}`)
           newState[`alerted:${alertKey}`] = true
-          log.push(`${fighter.name}: alerta 10 min (${time})`)
+          log.push(`${fighter.name}: alerta ${mins} min`)
         }
       }
-
-      newState[key] = { time, matchRef, updatedAt: Date.now() }
+      newState[key] = { ref: data.ref, startMs: data.startMs, updatedAt: now }
     }
 
     await redis.set('cf:state', JSON.stringify(newState))
     return new Response(JSON.stringify({ ok: true, checked: fighters.length, changes: log }), {
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     })
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { 'Content-Type': 'application/json' }
+      status: 500, headers: { 'Content-Type': 'application/json' },
     })
   }
 }
