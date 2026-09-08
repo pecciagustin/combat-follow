@@ -123,6 +123,20 @@ function gridClass(count) {
   return 'count-many'
 }
 
+const svg = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round' }
+function IconPanel() {
+  return <svg width="23" height="23" viewBox="0 0 24 24" {...svg}><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></svg>
+}
+function IconSetup() {
+  return <svg width="23" height="23" viewBox="0 0 24 24" {...svg}><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /><circle cx="9" cy="7" r="2" fill="var(--card-bg)" /><circle cx="15" cy="12" r="2" fill="var(--card-bg)" /><circle cx="8" cy="17" r="2" fill="var(--card-bg)" /></svg>
+}
+function IconAdmin() {
+  return <svg width="23" height="23" viewBox="0 0 24 24" {...svg}><path d="M12 3 5 6v5c0 4 3 7 7 9 4-2 7-5 7-9V6l-7-3z" /></svg>
+}
+function IconPlus() {
+  return <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+}
+
 export default function App() {
   const { user, status, isAdmin, credential, checking, error: authError, signIn, signOut } = useAuth()
   const [tab, setTab] = useState('panel')
@@ -440,29 +454,6 @@ export default function App() {
         onSignOut={signOut}
       />
 
-      <nav className="nav-tabs">
-        <button
-          className={`nav-tab${tab === 'panel' ? ' active' : ''}`}
-          onClick={() => setTab('panel')}
-        >
-          Panel
-        </button>
-        <button
-          className={`nav-tab${tab === 'setup' ? ' active' : ''}`}
-          onClick={() => setTab('setup')}
-        >
-          Setup {activeFighters.length > 0 && `(${activeFighters.length})`}
-        </button>
-        {isAdmin && (
-          <button
-            className={`nav-tab${tab === 'admin' ? ' active' : ''}`}
-            onClick={() => setTab('admin')}
-          >
-            Admin
-          </button>
-        )}
-      </nav>
-
       {tab === 'admin' && isAdmin && (
         <AdminPanel credential={credential} adminEmail={user.email} />
       )}
@@ -493,19 +484,20 @@ export default function App() {
 
       {tab === 'panel' && (
         <div className="panel-screen">
+          {events.length > 1 && (
+            <div className="event-chips" style={{ padding: '12px 16px 0' }}>
+              {events.map((ev) => (
+                <button
+                  key={ev.id}
+                  className={`event-chip${ev.id === activeEventId ? ' active' : ''}`}
+                  onClick={() => selectEvent(ev.id)}
+                >
+                  {ev.name}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="panel-toolbar">
-            {events.length > 1 && (
-              <select
-                className="event-select"
-                value={activeEventId || ''}
-                onChange={(e) => selectEvent(e.target.value)}
-                aria-label="Evento"
-              >
-                {events.map((ev) => (
-                  <option key={ev.id} value={ev.id}>{ev.name}</option>
-                ))}
-              </select>
-            )}
             <label>Actualizar cada:</label>
             <select
               value={intervalSec}
@@ -559,6 +551,26 @@ export default function App() {
 
         </div>
       )}
+
+      <nav className="tabbar">
+        <button className={`tab${tab === 'panel' ? ' active' : ''}`} onClick={() => setTab('panel')}>
+          <IconPanel />
+          Panel
+        </button>
+        <button className={`tab${tab === 'setup' ? ' active' : ''}`} onClick={() => setTab('setup')}>
+          <IconSetup />
+          Setup
+        </button>
+        <button className="fab" onClick={() => setTab('setup')} aria-label="Agregar seguimiento">
+          <IconPlus />
+        </button>
+        {isAdmin && (
+          <button className={`tab${tab === 'admin' ? ' active' : ''}`} onClick={() => setTab('admin')}>
+            <IconAdmin />
+            Admin
+          </button>
+        )}
+      </nav>
 
       {showQR && (
         <QRModal fighters={activeFighters} eventName={activeEvent?.name} emailConfig={emailConfig} onClose={() => setShowQR(false)} />
