@@ -461,7 +461,7 @@ export default function App() {
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fighters: payloadFighters, emailConfig }),
+        body: JSON.stringify({ credential, fighters: payloadFighters, emailConfig }),
       })
       const data = await res.json()
       if (data.ok) setSuccessInfo({ eventName: ev?.name || '', count: data.count })
@@ -517,6 +517,7 @@ export default function App() {
         onRefresh={handleManualRefresh}
         isLoading={isLoading}
         user={user}
+        isAdmin={isAdmin}
         onSignOut={signOut}
         onOpenNotifications={() => setShowNotifications(true)}
         onOpenMyTournaments={() => setShowMyTournaments(true)}
@@ -573,7 +574,7 @@ export default function App() {
               ))}
             </select>
             <div className="spacer" />
-            {activeFighters.length > 0 && (
+            {isAdmin && activeFighters.length > 0 && (
               <button className="btn-ghost" style={{ fontSize: 12, minHeight: 32, gap: 6 }} onClick={activateServerMonitoring}>
                 <IconGear size={14} />
                 Servidor
