@@ -37,7 +37,7 @@ export default function MyTournamentsModal({ credential, onClose }) {
         <div style={{ textAlign: 'left' }}>
           {!credential ? (
             <p className="login-text" style={{ margin: '8px 0' }}>
-              Iniciá sesión para ver los torneos guardados en tu cuenta.
+              Inicia sesión para ver los torneos guardados en tu cuenta.
             </p>
           ) : loading ? (
             <p className="login-text" style={{ margin: '8px 0' }}>Cargando…</p>
@@ -45,7 +45,7 @@ export default function MyTournamentsModal({ credential, onClose }) {
             <p className="login-error" style={{ margin: '8px 0' }}>{error}</p>
           ) : tournaments.length === 0 ? (
             <p className="login-text" style={{ margin: '8px 0' }}>
-              Todavía no guardaste ningún torneo. Creá uno y agregá luchadores: quedan guardados acá automáticamente.
+              Todavía no has guardado ningún torneo. Crea uno y agrega luchadores: quedan guardados aquí automáticamente.
             </p>
           ) : (
             <div className="fighter-list">

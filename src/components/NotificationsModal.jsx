@@ -29,7 +29,7 @@ export default function NotificationsModal({ emailConfig, onSave, onClose }) {
 
         <div style={{ textAlign: 'left' }}>
           <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
-            Crea una cuenta gratis en <strong style={{ color: 'var(--text)' }}>emailjs.com</strong> y pegá tus credenciales para recibir un email cuando falten menos de 10 minutos para un combate.
+            Crea una cuenta gratis en <strong style={{ color: 'var(--text)' }}>emailjs.com</strong> y pega tus credenciales para recibir un email cuando falten menos de 10 minutos para un combate.
           </p>
 
           {FIELDS.map(({ key, label, placeholder, type }) => (
