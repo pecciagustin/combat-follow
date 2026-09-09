@@ -52,7 +52,7 @@ export default function LoginScreen({ onCredential, error: externalError }) {
           <img src={logoCf} alt="Combat Follow" className="login-logo-img" />
           <div className="login-title">COMBAT FOLLOW</div>
           <div className="login-subtitle">by Frames and Chokes</div>
-          <p className="login-tagline">Seguí a tus peleadores en vivo, mat por mat.</p>
+          <p className="login-tagline">Sigue a tus peleadores en vivo, mat por mat.</p>
         </div>
 
         <div className="login-cta">

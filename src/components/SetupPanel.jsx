@@ -126,7 +126,7 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
     return (
       <div className="setup-panel">
         <form className="add-fighter-form event-empty" onSubmit={(e) => { e.preventDefault(); handleCreateEvent() }}>
-          <h2>Creá tu primer evento</h2>
+          <h2>Crea tu primer evento</h2>
           <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
             Un evento agrupa a tus luchadores y usa una sola match list. Después vas a poder agregar luchadores con solo el nombre.
           </p>
@@ -288,7 +288,7 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
         <form className="add-fighter-form" onSubmit={handleFightSubmit} style={{ marginTop: 0 }}>
           <h2>Seguir combate</h2>
           <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
-            Seguí un combate por mat y número dentro de la match list del evento. Los participantes y horario se actualizan cuando estén definidos.
+            Sigue un combate por mat y número dentro de la match list del evento. Los participantes y horario se actualizan cuando estén definidos.
           </p>
           <div className="form-group">
             <label>Descripción</label>
