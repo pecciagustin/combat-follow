@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { IconPlus, IconPencil, IconTrash, IconWatch, IconClose, IconScan, IconShare } from './icons'
 
 const selectStyle = { width: '100%', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontFamily: 'inherit', fontSize: 15, padding: '12px 14px', minHeight: 44, outline: 'none' }
+const eventInputStyle = { flex: 1, background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 14, padding: '10px 12px', outline: 'none' }
 
-function buildWatchUrl(fighters) {
+// The match list URL now lives at the event level, so every fighter shares it.
+function buildWatchUrl(fighters, eventUrl) {
   const minimal = fighters.map(f => ({
     name: f.name,
-    url: f.matchlistUrl || f.bracketUrl || '',
+    url: eventUrl || '',
     ...(f.discipline ? { discipline: f.discipline } : {}),
     ...(f.trackMode === 'fight' ? { trackMode: 'fight', mat: f.mat, fightNum: f.fightNum } : {}),
   }))
@@ -23,13 +25,16 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
   // event management
   const [showNewEvent, setShowNewEvent] = useState(false)
   const [newEventName, setNewEventName] = useState('')
+  const [newEventUrl, setNewEventUrl] = useState('')
   const activeEvent = events.find((e) => e.id === activeEventId) || null
 
   function handleCreateEvent() {
     const name = newEventName.trim()
-    if (!name) return
-    onCreateEvent(name)
+    const url = newEventUrl.trim()
+    if (!name || !url) return
+    onCreateEvent(name, url)
     setNewEventName('')
+    setNewEventUrl('')
     setShowNewEvent(false)
   }
 
@@ -40,7 +45,7 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
   }
 
   function copyWatchUrl() {
-    const url = buildWatchUrl(fighters)
+    const url = buildWatchUrl(fighters, activeEvent?.matchlistUrl)
     navigator.clipboard.writeText(url).then(() => {
       setWatchCopied(true)
       setTimeout(() => setWatchCopied(false), 2500)
@@ -49,18 +54,15 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
 
   // fighter form
   const [name, setName] = useState('')
-  const [matchlistUrl, setMatchlistUrl] = useState('')
   const [discipline, setDiscipline] = useState('')
 
   // fight-tracking form
   const [fightLabel, setFightLabel] = useState('')
-  const [fightUrl, setFightUrl] = useState('')
   const [fightMat, setFightMat] = useState('')
   const [fightNum, setFightNum] = useState('')
 
   const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
-  const [editMatchlistUrl, setEditMatchlistUrl] = useState('')
   const [editDiscipline, setEditDiscipline] = useState('')
   const [editMat, setEditMat] = useState('')
   const [editFightNum, setEditFightNum] = useState('')
@@ -69,24 +71,20 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
   function handleSubmit(e) {
     e.preventDefault()
     const trimName = name.trim()
-    const trimUrl = matchlistUrl.trim()
-    if (!trimName || !trimUrl) return
-    onAdd({ name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl, discipline: discipline || null })
+    if (!trimName) return
+    onAdd({ name: trimName, discipline: discipline || null })
     setName('')
-    setMatchlistUrl('')
     setDiscipline('')
   }
 
   function handleFightSubmit(e) {
     e.preventDefault()
     const label = fightLabel.trim()
-    const url = fightUrl.trim()
     const mat = fightMat.trim()
     const num = fightNum.trim()
-    if (!label || !url || !mat || !num) return
-    onAdd({ trackMode: 'fight', name: label, matchlistUrl: url, bracketUrl: url, mat, fightNum: num })
+    if (!label || !mat || !num) return
+    onAdd({ trackMode: 'fight', name: label, mat, fightNum: num })
     setFightLabel('')
-    setFightUrl('')
     setFightMat('')
     setFightNum('')
   }
@@ -94,7 +92,6 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
   function startEdit(f) {
     setEditingId(f.id)
     setEditName(f.name)
-    setEditMatchlistUrl(f.matchlistUrl || f.bracketUrl || '')
     setEditDiscipline(f.discipline || '')
     setEditTrackMode(f.trackMode || null)
     setEditMat(f.mat || '')
@@ -104,7 +101,6 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
   function cancelEdit() {
     setEditingId(null)
     setEditName('')
-    setEditMatchlistUrl('')
     setEditDiscipline('')
     setEditTrackMode(null)
     setEditMat('')
@@ -113,17 +109,59 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
 
   function handleEditSave(id) {
     const trimName = editName.trim()
-    const trimUrl = editMatchlistUrl.trim()
-    if (!trimName || !trimUrl) return
+    if (!trimName) return
     if (editTrackMode === 'fight') {
       const mat = editMat.trim()
       const fightNum = editFightNum.trim()
       if (!mat || !fightNum) return
-      onEdit(id, { trackMode: 'fight', name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl, mat, fightNum })
+      onEdit(id, { trackMode: 'fight', name: trimName, mat, fightNum })
     } else {
-      onEdit(id, { name: trimName, bracketUrl: trimUrl, matchlistUrl: trimUrl, discipline: editDiscipline || null })
+      onEdit(id, { name: trimName, discipline: editDiscipline || null })
     }
     cancelEdit()
+  }
+
+  // ── Empty state: no events yet ──────────────────────────
+  if (events.length === 0) {
+    return (
+      <div className="setup-panel">
+        <form className="add-fighter-form event-empty" onSubmit={(e) => { e.preventDefault(); handleCreateEvent() }}>
+          <h2>Creá tu primer evento</h2>
+          <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
+            Un evento agrupa a tus luchadores y usa una sola match list. Después vas a poder agregar luchadores con solo el nombre.
+          </p>
+          <div className="form-group">
+            <label htmlFor="new-event-name">Nombre del evento</label>
+            <input
+              id="new-event-name"
+              type="text"
+              placeholder="Ej: AJP Grand Slam Madrid"
+              value={newEventName}
+              onChange={(e) => setNewEventName(e.target.value)}
+              autoFocus
+              autoComplete="off"
+              autoCapitalize="words"
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="new-event-url">Match list (URL)</label>
+            <input
+              id="new-event-url"
+              type="url"
+              placeholder="https://.../schedule/matchlist"
+              value={newEventUrl}
+              onChange={(e) => setNewEventUrl(e.target.value)}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+            />
+          </div>
+          <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={!newEventName.trim() || !newEventUrl.trim()}>
+            Crear evento
+          </button>
+        </form>
+      </div>
+    )
   }
 
   return (
@@ -146,21 +184,38 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
             <IconPlus size={14} /> Evento
           </button>
         </div>
+        {activeEvent?.matchlistUrl && (
+          <div className="event-matchlist" title={activeEvent.matchlistUrl}>
+            Match list: {activeEvent.matchlistUrl}
+          </div>
+        )}
         {showNewEvent && (
-          <div className="event-bar-row" style={{ marginTop: 8 }}>
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <input
               type="text"
               placeholder="Nombre del evento…"
               value={newEventName}
               onChange={(e) => setNewEventName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateEvent() }}
               autoFocus
               autoComplete="off"
-              style={{ flex: 1, background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 14, padding: '10px 12px', outline: 'none' }}
+              style={eventInputStyle}
             />
-            <button className="btn-primary" style={{ minHeight: 40, fontSize: 12 }} disabled={!newEventName.trim()} onClick={handleCreateEvent}>
-              Crear
-            </button>
+            <div className="event-bar-row">
+              <input
+                type="url"
+                placeholder="Match list (URL)…"
+                value={newEventUrl}
+                onChange={(e) => setNewEventUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleCreateEvent() }}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                style={eventInputStyle}
+              />
+              <button className="btn-primary" style={{ minHeight: 40, fontSize: 12 }} disabled={!newEventName.trim() || !newEventUrl.trim()} onClick={handleCreateEvent}>
+                Crear
+              </button>
+            </div>
           </div>
         )}
         {activeEvent && (
@@ -215,19 +270,6 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
             />
           </div>
           <div className="form-group">
-            <label htmlFor="fighter-matchlist">Matchlist URL</label>
-            <input
-              id="fighter-matchlist"
-              type="url"
-              placeholder="https://.../schedule/matchlist?search=nombre"
-              value={matchlistUrl}
-              onChange={(e) => setMatchlistUrl(e.target.value)}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-            />
-          </div>
-          <div className="form-group">
             <label>Disciplina <span style={{ color: 'var(--text-secondary)', fontWeight: 400, textTransform: 'none' }}>(si pelea en las dos)</span></label>
             <select value={discipline} onChange={(e) => setDiscipline(e.target.value)} style={selectStyle}>
               <option value="">— Cualquiera —</option>
@@ -235,7 +277,7 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
               <option value="nogi">No-Gi</option>
             </select>
           </div>
-          <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={!name.trim() || !matchlistUrl.trim()}>
+          <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={!name.trim()}>
             + Agregar
           </button>
         </form>
@@ -246,7 +288,7 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
         <form className="add-fighter-form" onSubmit={handleFightSubmit} style={{ marginTop: 0 }}>
           <h2>Seguir combate</h2>
           <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
-            Seguí un combate por mat y número. Los participantes y horario se actualizan cuando estén definidos.
+            Seguí un combate por mat y número dentro de la match list del evento. Los participantes y horario se actualizan cuando estén definidos.
           </p>
           <div className="form-group">
             <label>Descripción</label>
@@ -258,18 +300,6 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="words"
-            />
-          </div>
-          <div className="form-group">
-            <label>URL del evento</label>
-            <input
-              type="url"
-              placeholder="https://.../schedule/matchlist o bjjcompsystem.com/..."
-              value={fightUrl}
-              onChange={(e) => setFightUrl(e.target.value)}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
             />
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
@@ -298,7 +328,7 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
             type="submit"
             className="btn-primary"
             style={{ width: '100%' }}
-            disabled={!fightLabel.trim() || !fightUrl.trim() || !fightMat.trim() || !fightNum.trim()}
+            disabled={!fightLabel.trim() || !fightMat.trim() || !fightNum.trim()}
           >
             + Agregar combate
           </button>
@@ -372,17 +402,6 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
                           autoCapitalize="words"
                         />
                       </div>
-                      <div className="form-group" style={{ marginBottom: 8 }}>
-                        <label>URL</label>
-                        <input
-                          type="url"
-                          value={editMatchlistUrl}
-                          onChange={(e) => setEditMatchlistUrl(e.target.value)}
-                          autoComplete="off"
-                          autoCorrect="off"
-                          autoCapitalize="off"
-                        />
-                      </div>
                       {f.trackMode === 'fight' ? (
                         <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
                           <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
@@ -405,7 +424,7 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
                         </div>
                       )}
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="btn-primary" style={{ flex: 1 }} onClick={() => handleEditSave(f.id)} disabled={!editName.trim() || !editMatchlistUrl.trim()}>
+                        <button className="btn-primary" style={{ flex: 1 }} onClick={() => handleEditSave(f.id)} disabled={!editName.trim()}>
                           Guardar
                         </button>
                         <button className="btn-ghost" onClick={cancelEdit}>Cancelar</button>
@@ -427,7 +446,6 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
                             </span>
                           )}
                         </div>
-                        <div className="fighter-item-url">{f.matchlistUrl || f.bracketUrl}</div>
                       </div>
                       <button className="btn-ghost" onClick={() => startEdit(f)} aria-label={`Editar ${f.name}`}><IconPencil size={15} /></button>
                       <button className="btn-danger" onClick={() => onRemove(f.id)} aria-label={`Eliminar ${f.name}`}><IconClose size={15} /></button>

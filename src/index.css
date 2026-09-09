@@ -1007,6 +1007,17 @@ button:active {
   margin-top: 10px;
   justify-content: flex-end;
 }
+.event-matchlist {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-empty {
+  margin-top: 4px;
+}
 .event-select {
   background: var(--input-bg);
   border: 1px solid var(--border);
