@@ -14,10 +14,12 @@ import NotificationsModal from './components/NotificationsModal'
 import { IconGear } from './components/icons'
 import { useAuth } from './auth/useAuth'
 
-const STORAGE_KEY = 'combat-follow-fighters'
+// v2: match list moved to the event level; fighters no longer carry a URL.
+// Bumping the keys starts fresh and ignores legacy data (kept intact, reversible).
+const STORAGE_KEY = 'combat-follow-fighters-v2'
 const EMAIL_CONFIG_KEY = 'combat-follow-email'
-const EVENTS_KEY = 'combat-follow-events'
-const ACTIVE_EVENT_KEY = 'combat-follow-active-event'
+const EVENTS_KEY = 'combat-follow-events-v2'
+const ACTIVE_EVENT_KEY = 'combat-follow-active-event-v2'
 
 function decodeImportParam(params) {
   const z = params.get('importz')
@@ -75,34 +77,24 @@ function loadActiveEventId() {
   }
 }
 
-// Ensure there is always at least one event and every fighter is tagged with an
-// eventId. Migrates legacy data (flat fighter list, no events) into a default
-// event. Returns { events, fighters, activeEventId } — possibly unchanged.
-function migrateEvents(events, fighters, activeEventId) {
-  let nextEvents = events
-  let nextFighters = fighters
-
-  if (nextEvents.length === 0) {
-    const hadFighters = nextFighters.length > 0
-    const defaultEvent = { id: crypto.randomUUID(), name: hadFighters ? 'Mi evento' : 'Evento 1' }
-    nextEvents = [defaultEvent]
-    // Attach any untagged fighters to the default event.
-    nextFighters = nextFighters.map((f) => (f.eventId ? f : { ...f, eventId: defaultEvent.id }))
-    activeEventId = defaultEvent.id
-  } else {
-    // Tag any fighters missing an eventId (or pointing to a deleted event).
-    const validIds = new Set(nextEvents.map((e) => e.id))
-    const fallbackId = nextEvents[0].id
-    nextFighters = nextFighters.map((f) =>
-      validIds.has(f.eventId) ? f : { ...f, eventId: fallbackId }
-    )
+// Normalize stored state. Unlike the old migration, this does NOT create a
+// default event: with no events we render an empty state instead. It only keeps
+// fighters tagged to a valid event and the active id consistent.
+// Returns { events, fighters, activeEventId } — activeEventId may be null.
+function normalizeState(events, fighters, activeEventId) {
+  if (events.length === 0) {
+    return { events: [], fighters: [], activeEventId: null }
   }
 
-  if (!activeEventId || !nextEvents.some((e) => e.id === activeEventId)) {
-    activeEventId = nextEvents[0].id
+  // Drop fighters pointing to a deleted/unknown event.
+  const validIds = new Set(events.map((e) => e.id))
+  const nextFighters = fighters.filter((f) => validIds.has(f.eventId))
+
+  if (!activeEventId || !validIds.has(activeEventId)) {
+    activeEventId = events[0].id
   }
 
-  return { events: nextEvents, fighters: nextFighters, activeEventId }
+  return { events, fighters: nextFighters, activeEventId }
 }
 
 function vibrate() {
@@ -143,8 +135,8 @@ function IconPlus() {
 export default function App() {
   const { user, status, isAdmin, credential, checking, error: authError, signIn, signOut } = useAuth()
   const [tab, setTab] = useState('panel')
-  // Run migration once so events/fighters/active id are consistent from render 1.
-  const [seed] = useState(() => migrateEvents(loadEvents(), loadFighters(), loadActiveEventId()))
+  // Normalize once so events/fighters/active id are consistent from render 1.
+  const [seed] = useState(() => normalizeState(loadEvents(), loadFighters(), loadActiveEventId()))
   const [fighters, setFighters] = useState(seed.fighters)
   const [events, setEvents] = useState(seed.events)
   const [activeEventId, setActiveEventId] = useState(seed.activeEventId)
@@ -176,14 +168,21 @@ export default function App() {
 
   useEffect(() => {
     if (activeEventId) localStorage.setItem(ACTIVE_EVENT_KEY, activeEventId)
+    else localStorage.removeItem(ACTIVE_EVENT_KEY)
   }, [activeEventId])
 
   // Fighters belonging to the currently selected event.
   const activeFighters = fighters.filter((f) => f.eventId === activeEventId)
 
   const refresh = useCallback(async () => {
-    // Only refresh the fighters of the active event.
-    const toScrape = fighters.filter((f) => f.eventId === activeEventId)
+    // Only refresh the fighters of the active event, injecting the event's
+    // match list URL into each one (fighters no longer carry their own URL).
+    const ev = events.find((e) => e.id === activeEventId)
+    const eventUrl = ev?.matchlistUrl || ''
+    if (!eventUrl) return
+    const toScrape = fighters
+      .filter((f) => f.eventId === activeEventId)
+      .map((f) => ({ ...f, matchlistUrl: eventUrl, bracketUrl: eventUrl }))
     if (toScrape.length === 0) return
     if (isLoadingRef.current) return  // debounce — reliable ref, never stale
     isLoadingRef.current = true
@@ -221,7 +220,7 @@ export default function App() {
       isLoadingRef.current = false
       setIsLoading(false)
     }
-  }, [fighters, activeEventId])
+  }, [fighters, events, activeEventId])
 
   useEffect(() => {
     clearInterval(intervalRef.current)
@@ -239,30 +238,54 @@ export default function App() {
     const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
     const importedEmail = !Array.isArray(decoded) ? decoded.email : null
     const eventName = !Array.isArray(decoded) ? (decoded.eventName || '').trim() : ''
+    // Event-level match list URL. New payloads carry `eventUrl`; legacy payloads
+    // only had per-fighter URLs, so fall back to the first fighter's url.
+    const eventUrl = (
+      (!Array.isArray(decoded) && decoded.eventUrl) ||
+      importedFighters.map((f) => f.url || f.matchlistUrl || f.bracketUrl).find(Boolean) ||
+      ''
+    )
 
-    // Resolve the target event.
+    // Resolve the target event. Without an event name, import into the active
+    // event; if there is none, create one from the payload (or a default name).
     let targetId = activeEventId
     if (eventName) {
       const existing = events.find((e) => e.name.toLowerCase() === eventName.toLowerCase())
       if (existing) {
         targetId = existing.id
+        // Backfill the match list URL if this event doesn't have one yet.
+        if (eventUrl && !existing.matchlistUrl) {
+          setEvents((prev) => prev.map((e) => (e.id === existing.id ? { ...e, matchlistUrl: eventUrl } : e)))
+        }
       } else {
-        const newEvent = { id: crypto.randomUUID(), name: eventName }
+        const newEvent = { id: crypto.randomUUID(), name: eventName, matchlistUrl: eventUrl }
         targetId = newEvent.id
         setEvents((prev) => [...prev, newEvent])
       }
       setActiveEventId(targetId)
+    } else if (!targetId) {
+      const newEvent = { id: crypto.randomUUID(), name: 'Evento importado', matchlistUrl: eventUrl }
+      targetId = newEvent.id
+      setEvents((prev) => [...prev, newEvent])
+      setActiveEventId(targetId)
     }
 
+    // Dedupe within the target event. Fighters no longer carry a URL, so the key
+    // is the mat/fight slot (fight mode) or the lowercased name + discipline.
     const fighterKey = (f) => f.trackMode === 'fight'
-      ? `fight:${f.matchlistUrl}:${f.mat}:${f.fightNum}`
-      : f.bracketUrl
+      ? `fight:${f.mat}:${f.fightNum}`
+      : `name:${(f.name || '').toLowerCase()}:${f.discipline || ''}`
     const existingKeys = new Set(
       fighters.filter((f) => f.eventId === targetId).map(fighterKey)
     )
     const toAdd = importedFighters
       .filter((f) => !existingKeys.has(fighterKey(f)))
-      .map((f) => ({ ...f, id: crypto.randomUUID(), eventId: targetId }))
+      .map((f) => {
+        // Keep only the new model's fields; drop any per-fighter URL.
+        const base = { id: crypto.randomUUID(), eventId: targetId, name: f.name }
+        if (f.trackMode === 'fight') return { ...base, trackMode: 'fight', mat: f.mat, fightNum: f.fightNum }
+        return { ...base, discipline: f.discipline || null }
+      })
     if (toAdd.length > 0) setFighters((prev) => [...prev, ...toAdd])
 
     if (importedEmail?.serviceId) {
@@ -309,14 +332,16 @@ export default function App() {
   }
 
   function addFighter(fighter) {
+    if (!activeEventId) return  // no active event → nothing to attach to
     const newFighter = { ...fighter, id: crypto.randomUUID(), eventId: activeEventId }
     setFighters((prev) => [...prev, newFighter])
   }
 
-  function createEvent(name) {
+  function createEvent(name, matchlistUrl) {
     const trimmed = (name || '').trim()
+    const url = (matchlistUrl || '').trim()
     if (!trimmed) return
-    const newEvent = { id: crypto.randomUUID(), name: trimmed }
+    const newEvent = { id: crypto.randomUUID(), name: trimmed, matchlistUrl: url }
     setEvents((prev) => [...prev, newEvent])
     setActiveEventId(newEvent.id)
     setMatchMap({})
@@ -341,10 +366,10 @@ export default function App() {
     })
     setEvents((prev) => {
       const remaining = prev.filter((e) => e.id !== id)
+      // No phantom "Evento 1": deleting the last event returns to the empty state.
       if (remaining.length === 0) {
-        const fresh = { id: crypto.randomUUID(), name: 'Evento 1' }
-        setActiveEventId(fresh.id)
-        return [fresh]
+        setActiveEventId(null)
+        return []
       }
       if (id === activeEventId) setActiveEventId(remaining[0].id)
       return remaining
@@ -401,11 +426,15 @@ export default function App() {
     if (!activeFighters.length) return alert('No hay luchadores en este evento.')
     if (!emailConfig.serviceId) return alert('Configura las notificaciones de email primero.')
     const ev = events.find((e) => e.id === activeEventId)
+    const eventUrl = ev?.matchlistUrl || ''
+    if (!eventUrl) return alert('Este evento no tiene una match list configurada.')
+    // Server cron / api/watch read `url` per fighter — inject the event's URL.
+    const payloadFighters = activeFighters.map((f) => ({ ...f, url: eventUrl, matchlistUrl: eventUrl, bracketUrl: eventUrl }))
     try {
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fighters: activeFighters, emailConfig }),
+        body: JSON.stringify({ fighters: payloadFighters, emailConfig }),
       })
       const data = await res.json()
       if (data.ok) setSuccessInfo({ eventName: ev?.name || '', count: data.count })
@@ -580,7 +609,7 @@ export default function App() {
       </nav>
 
       {showQR && (
-        <QRModal fighters={activeFighters} eventName={activeEvent?.name} emailConfig={emailConfig} onClose={() => setShowQR(false)} />
+        <QRModal fighters={activeFighters} eventName={activeEvent?.name} eventUrl={activeEvent?.matchlistUrl} emailConfig={emailConfig} onClose={() => setShowQR(false)} />
       )}
       {showScanner && (
         <QRScanner onResult={handleScanResult} onClose={() => setShowScanner(false)} />

@@ -15,13 +15,13 @@ class QRErrorBoundary extends Component {
   }
 }
 
-function buildPayload(fighters, emailConfig, eventName) {
+function buildPayload(fighters, emailConfig, eventName, eventUrl) {
   return {
     ...(eventName ? { eventName } : {}),
-    fighters: fighters.map(({ name, bracketUrl, matchlistUrl, discipline, trackMode, mat, fightNum }) => {
+    // Match list URL now lives at the event level — shared once for all fighters.
+    ...(eventUrl ? { eventUrl } : {}),
+    fighters: fighters.map(({ name, discipline, trackMode, mat, fightNum }) => {
       const f = { name }
-      if (bracketUrl) f.bracketUrl = bracketUrl
-      if (matchlistUrl && matchlistUrl !== bracketUrl) f.matchlistUrl = matchlistUrl
       if (discipline) f.discipline = discipline
       if (trackMode) f.trackMode = trackMode
       if (mat) f.mat = mat
@@ -32,11 +32,11 @@ function buildPayload(fighters, emailConfig, eventName) {
   }
 }
 
-export default function QRModal({ fighters, eventName, emailConfig, onClose }) {
+export default function QRModal({ fighters, eventName, eventUrl, emailConfig, onClose }) {
   const [copied, setCopied] = useState(false)
   const [showLink, setShowLink] = useState(false)
 
-  const payload = buildPayload(fighters, emailConfig, eventName)
+  const payload = buildPayload(fighters, emailConfig, eventName, eventUrl)
   const json = JSON.stringify(payload)
 
   // Compressed URL (for QR)
