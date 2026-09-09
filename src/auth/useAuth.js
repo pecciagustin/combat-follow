@@ -37,6 +37,9 @@ export function useAuth() {
         user: res.user,
         status: res.status,
         isAdmin: res.isAdmin,
+        tier: res.tier,
+        maxFighters: res.maxFighters,
+        features: res.features,
       })
       return res
     } catch (e) {
@@ -44,6 +47,24 @@ export function useAuth() {
       applySession(null)
       throw e
     }
+  }, [applySession])
+
+  // Re-verify the stored credential and refresh status/tier (e.g. after
+  // redeeming a code or an admin changing the tier). No-op when logged out.
+  const refresh = useCallback(async () => {
+    const stored = loadStoredSession()
+    if (!stored?.credential) return null
+    const res = await verifyWithServer(stored.credential)
+    applySession({
+      credential: stored.credential,
+      user: res.user,
+      status: res.status,
+      isAdmin: res.isAdmin,
+      tier: res.tier,
+      maxFighters: res.maxFighters,
+      features: res.features,
+    })
+    return res
   }, [applySession])
 
   // Re-validate the stored session on load (refresh status, honor blocks).
@@ -60,6 +81,9 @@ export function useAuth() {
           user: res.user,
           status: res.status,
           isAdmin: res.isAdmin,
+          tier: res.tier,
+          maxFighters: res.maxFighters,
+          features: res.features,
         })
       })
       .catch(() => {
@@ -87,11 +111,15 @@ export function useAuth() {
       user: { email: 'local@dev.test', name: 'Local Dev', picture: '' },
       status: 'approved',
       isAdmin: false,
+      tier: 'team',
+      maxFighters: 15,
+      features: { realtimeAlerts: false },
       credential: null,
       checking: false,
       error: '',
       signIn,
       signOut,
+      refresh,
     }
   }
 
@@ -99,10 +127,14 @@ export function useAuth() {
     user: session?.user || null,
     status: session?.status || null,
     isAdmin: session?.isAdmin || false,
+    tier: session?.tier || null,
+    maxFighters: session?.maxFighters ?? null,
+    features: session?.features || null,
     credential: session?.credential || null,
     checking,
     error,
     signIn,
     signOut,
+    refresh,
   }
 }

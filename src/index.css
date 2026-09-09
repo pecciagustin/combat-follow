@@ -1234,6 +1234,123 @@ button:active {
 .btn-block { background: transparent; color: var(--live); border-color: rgba(255, 59, 59, 0.5); }
 .btn-approve:disabled, .btn-block:disabled { opacity: 0.5; cursor: default; }
 
+/* ─── Tier editor (per user) ──────────────────────────── */
+.tier-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.tier-editor select,
+.tier-editor input[type="number"] {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 8px;
+  min-height: 30px;
+  outline: none;
+}
+.tier-editor input[type="number"] { width: 68px; }
+.tier-feature {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.tier-msg { font-size: 11px; color: var(--accent); }
+
+/* ─── Partner codes ───────────────────────────────────── */
+.codes-section {
+  margin-top: 20px;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+.code-create {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 10px 0;
+}
+.code-create select,
+.code-create input {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 8px 10px;
+  min-height: 38px;
+  outline: none;
+}
+.code-create input[type="number"] { width: 80px; }
+.code-create input[type="text"] { flex: 1; min-width: 140px; }
+.code-list { display: flex; flex-direction: column; gap: 8px; }
+.code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.code-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.code-value { font-family: monospace; font-size: 14px; font-weight: 600; letter-spacing: 0.5px; }
+.code-meta { font-size: 11px; color: var(--text-secondary); }
+
+/* ─── Redeem code (status screen) ─────────────────────── */
+.redeem-form {
+  width: 100%;
+  max-width: 340px;
+  margin: 18px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.redeem-label { font-size: 12px; color: var(--text-secondary); }
+.redeem-row { display: flex; gap: 8px; }
+.redeem-input {
+  flex: 1;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  padding: 10px 12px;
+  outline: none;
+  text-transform: uppercase;
+}
+.redeem-error { font-size: 12px; color: #ff8888; }
+
+/* ─── Quota UI (setup) ────────────────────────────────── */
+.upsell-notice {
+  margin-top: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.excess-badge {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--changed);
+  white-space: nowrap;
+}
+
 /* ─── Bottom tab bar (fixed footer) ───────────────────── */
 .tabbar {
   position: fixed;

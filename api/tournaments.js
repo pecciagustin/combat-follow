@@ -1,4 +1,4 @@
-import { verifyGoogleToken, getRedis } from '../lib/serverAuth.js'
+import { verifyGoogleToken, getRedis, requireApprovedUser } from '../lib/serverAuth.js'
 
 export const config = { runtime: 'edge' }
 
@@ -50,6 +50,13 @@ export default async function handler(req) {
 
   try {
     const redis = getRedis()
+
+    // Only approved accounts may read/write their archive (server-side gate).
+    try {
+      await requireApprovedUser(redis, payload)
+    } catch (err) {
+      return json({ error: err.message || 'No autorizado' }, 403)
+    }
 
     if (body.op === 'list') {
       const all = await redis.hgetall(key)
