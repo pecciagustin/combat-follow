@@ -11,7 +11,9 @@ import StatusScreen from './components/StatusScreen'
 import AdminPanel from './components/AdminPanel'
 import SuccessOverlay from './components/SuccessOverlay'
 import NotificationsModal from './components/NotificationsModal'
+import MyTournamentsModal from './components/MyTournamentsModal'
 import { IconGear } from './components/icons'
+import { saveTournaments } from './api/tournaments'
 import { useAuth } from './auth/useAuth'
 
 // v2: match list moved to the event level; fighters no longer carry a URL.
@@ -150,6 +152,7 @@ export default function App() {
   const [showScanner, setShowScanner] = useState(false)
   const [successInfo, setSuccessInfo] = useState(null)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showMyTournaments, setShowMyTournaments] = useState(false)
 
   function saveEmailConfig(cfg) {
     setEmailConfig(cfg)
@@ -170,6 +173,30 @@ export default function App() {
     if (activeEventId) localStorage.setItem(ACTIVE_EVENT_KEY, activeEventId)
     else localStorage.removeItem(ACTIVE_EVENT_KEY)
   }, [activeEventId])
+
+  // Sync each event (with its fighters) to the user's account archive, debounced.
+  // Upsert-only on the server, so deleting an event locally keeps it in "Mis
+  // torneos". No-op when logged out / dev bypass (no credential); errors ignored.
+  useEffect(() => {
+    if (!credential || events.length === 0) return
+    const t = setTimeout(() => {
+      const snapshots = events.map((ev) => ({
+        id: ev.id,
+        name: ev.name,
+        matchlistUrl: ev.matchlistUrl || '',
+        updatedAt: Date.now(),
+        fighters: fighters
+          .filter((f) => f.eventId === ev.id)
+          .map(({ name, discipline, trackMode, mat, fightNum }) => ({
+            name,
+            ...(discipline ? { discipline } : {}),
+            ...(trackMode === 'fight' ? { trackMode, mat, fightNum } : {}),
+          })),
+      }))
+      saveTournaments(credential, snapshots).catch(() => { /* offline / not deployed — ignore */ })
+    }, 1500)
+    return () => clearTimeout(t)
+  }, [credential, events, fighters])
 
   // Fighters belonging to the currently selected event.
   const activeFighters = fighters.filter((f) => f.eventId === activeEventId)
@@ -492,6 +519,7 @@ export default function App() {
         user={user}
         onSignOut={signOut}
         onOpenNotifications={() => setShowNotifications(true)}
+        onOpenMyTournaments={() => setShowMyTournaments(true)}
       />
 
       {tab === 'admin' && isAdmin && (
@@ -626,6 +654,12 @@ export default function App() {
           emailConfig={emailConfig}
           onSave={saveEmailConfig}
           onClose={() => setShowNotifications(false)}
+        />
+      )}
+      {showMyTournaments && (
+        <MyTournamentsModal
+          credential={credential}
+          onClose={() => setShowMyTournaments(false)}
         />
       )}
     </>
