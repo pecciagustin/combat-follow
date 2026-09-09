@@ -90,6 +90,17 @@ html, body {
   animation: pulse 1.8s ease-in-out infinite;
 }
 
+.header-logo {
+  height: 30px;
+  width: auto;
+  flex-shrink: 0;
+  display: block;
+}
+
+.header-logo.active {
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
@@ -859,12 +870,10 @@ button:active {
   text-align: center;
 }
 
-.login-hero {
-  width: 88px;
-  height: 88px;
-  object-fit: contain;
-  border-radius: 20px;
-  margin-bottom: 20px;
+.login-logo-img {
+  height: 60px;
+  width: auto;
+  margin-bottom: 22px;
 }
 
 .login-brand {
@@ -1270,17 +1279,9 @@ button:active {
   align-items: center;
   justify-content: center;
 }
-.login-logo {
-  width: 76px;
-  height: 76px;
-  border-radius: 24px;
-  background: var(--accent);
-  color: var(--lime-ink);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 20px 50px -20px rgba(198, 247, 54, 0.6);
+.login-hero-block .login-logo-img {
   margin-bottom: 26px;
+  filter: drop-shadow(0 20px 50px rgba(198, 247, 54, 0.35));
 }
 .login-tagline {
   font-size: 15px;
