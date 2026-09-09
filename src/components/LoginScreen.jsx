@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { GOOGLE_CLIENT_ID, loadGsi } from '../auth/googleAuth'
+import logoCf from '../assets/logo-cf.png'
 
 export default function LoginScreen({ onCredential, error: externalError }) {
   const buttonRef = useRef(null)
@@ -48,12 +49,7 @@ export default function LoginScreen({ onCredential, error: externalError }) {
     <div className="login-screen">
       <div className="login-inner">
         <div className="login-hero-block">
-          <div className="login-logo">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 4v7a6 6 0 0 0 12 0V4" />
-              <path d="M6 4H4M18 4h2M9 20h6" />
-            </svg>
-          </div>
+          <img src={logoCf} alt="Combat Follow" className="login-logo-img" />
           <div className="login-title">COMBAT FOLLOW</div>
           <div className="login-subtitle">by Frames and Chokes</div>
           <p className="login-tagline">Seguí a tus peleadores en vivo, mat por mat.</p>

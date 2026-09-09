@@ -1,4 +1,4 @@
-import hero from '../assets/hero.png'
+import logoCf from '../assets/logo-cf.png'
 
 // Shown to authenticated users who are not (yet) approved.
 export default function StatusScreen({ status, user, onSignOut }) {
@@ -7,7 +7,7 @@ export default function StatusScreen({ status, user, onSignOut }) {
   return (
     <div className="login-screen">
       <div className="login-card">
-        <img src={hero} alt="Combat Follow" className="login-hero" />
+        <img src={logoCf} alt="Combat Follow" className="login-logo-img" />
         <div className="login-brand">
           <div className="login-title">COMBAT FOLLOW</div>
           <div className="login-subtitle">by Frames and Chokes</div>

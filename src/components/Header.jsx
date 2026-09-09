@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconRefresh, IconSpinner, IconBell } from './icons'
+import logoCf from '../assets/logo-cf.png'
 
 export default function Header({ isMonitoring, lastUpdated, onRefresh, isLoading, user, onSignOut, onOpenNotifications }) {
   const timeStr = lastUpdated
@@ -21,7 +22,11 @@ export default function Header({ isMonitoring, lastUpdated, onRefresh, isLoading
   return (
     <header className="header">
       <div className="header-title">
-        <div className={`pulse-dot${isMonitoring ? ' active' : ''}`} />
+        <img
+          src={logoCf}
+          alt="Combat Follow"
+          className={`header-logo${isMonitoring ? ' active' : ''}`}
+        />
         <div>
           <div className="header-title-main">COMBAT FOLLOW</div>
           <div className="header-subtitle">by Frames and Chokes</div>
