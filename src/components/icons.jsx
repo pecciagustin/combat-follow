@@ -105,3 +105,13 @@ export function IconScan({ size = 15 }) {
     </svg>
   )
 }
+
+export function IconTrophy({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M6 4h12v4a6 6 0 0 1-12 0V4z" />
+      <path d="M6 6H4a2 2 0 0 0 0 4h2M18 6h2a2 2 0 0 1 0 4h-2" />
+      <path d="M9 20h6M12 14v6" />
+    </svg>
+  )
+}

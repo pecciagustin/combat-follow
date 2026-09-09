@@ -1018,6 +1018,44 @@ button:active {
 .event-empty {
   margin-top: 4px;
 }
+
+/* ─── My tournaments modal ────────────────────────────── */
+.tournament-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--text);
+}
+.tournament-caret {
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.tournament-fighter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  padding: 6px 8px;
+  background: var(--card-2);
+  border-radius: 8px;
+}
+.tournament-fighter-tag {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
 .event-select {
   background: var(--input-bg);
   border: 1px solid var(--border);
