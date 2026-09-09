@@ -1,6 +1,18 @@
 import { useState } from 'react'
 import { IconPlus, IconPencil, IconTrash, IconWatch, IconClose, IconScan, IconShare } from './icons'
 
+const TIER_LABELS = { fighter: 'Fighter', team: 'Team', official: 'Official' }
+
+// Shown when the per-event quota is full. Comfort/upsell only.
+function UpsellNotice({ max, tier }) {
+  return (
+    <div className="upsell-notice">
+      Alcanzaste el límite de tu plan{tier ? ` ${TIER_LABELS[tier] || ''}` : ''} ({max} por evento).
+      Elimina un seguimiento o pide un plan mayor para agregar más.
+    </div>
+  )
+}
+
 const selectStyle = { width: '100%', background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontFamily: 'inherit', fontSize: 15, padding: '12px 14px', minHeight: 44, outline: 'none' }
 const eventInputStyle = { flex: 1, background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 14, padding: '10px 12px', outline: 'none' }
 
@@ -16,8 +28,11 @@ function buildWatchUrl(fighters, eventUrl) {
   return `https://combat-follow.vercel.app/api/watch?f=${encoded}`
 }
 
-export default function SetupPanel({ fighters, events = [], activeEventId, onSelectEvent, onCreateEvent, onRenameEvent, onDeleteEvent, onAdd, onRemove, onEdit, onShowQR, onShowScanner, onClearAll, onPasteImport }) {
+export default function SetupPanel({ fighters, events = [], activeEventId, maxFighters = null, usedCount = 0, tier = null, onSelectEvent, onCreateEvent, onRenameEvent, onDeleteEvent, onAdd, onRemove, onEdit, onShowQR, onShowScanner, onClearAll, onPasteImport }) {
   const [addMode, setAddMode] = useState('fighter') // 'fighter' | 'fight'
+  // Per-event quota (comfort UI only — the backend is the real gate).
+  const hasCap = maxFighters != null && Number.isFinite(maxFighters)
+  const atCap = hasCap && fighters.length >= maxFighters
   const [pasteLink, setPasteLink] = useState('')
   const [pasteSuccess, setPasteSuccess] = useState(false)
   const [watchCopied, setWatchCopied] = useState(false)
@@ -277,9 +292,10 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
               <option value="nogi">No-Gi</option>
             </select>
           </div>
-          <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={!name.trim()}>
+          <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={!name.trim() || atCap}>
             + Agregar
           </button>
+          {atCap && <UpsellNotice max={maxFighters} tier={tier} />}
         </form>
       )}
 
@@ -328,17 +344,20 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
             type="submit"
             className="btn-primary"
             style={{ width: '100%' }}
-            disabled={!fightLabel.trim() || !fightMat.trim() || !fightNum.trim()}
+            disabled={!fightLabel.trim() || !fightMat.trim() || !fightNum.trim() || atCap}
           >
             + Agregar combate
           </button>
+          {atCap && <UpsellNotice max={maxFighters} tier={tier} />}
         </form>
       )}
 
       {/* ── List ── */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <div className="fighter-list-header">Seguimientos ({fighters.length})</div>
+          <div className="fighter-list-header">
+            Seguimientos {hasCap ? `(${usedCount}/${maxFighters})` : `(${fighters.length})`}
+          </div>
           {fighters.length > 0 && (
             <button className="btn-danger" style={{ fontSize: 11, minHeight: 28, padding: '0 10px' }} onClick={onClearAll}>
               Limpiar todo
@@ -371,8 +390,8 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
               className="btn-ghost"
               style={{ minHeight: 36, fontSize: 12, whiteSpace: 'nowrap' }}
               disabled={!pasteLink.trim()}
-              onClick={() => {
-                const count = onPasteImport(pasteLink)
+              onClick={async () => {
+                const count = await onPasteImport(pasteLink)
                 if (count > 0) { setPasteSuccess(true); setPasteLink('') }
               }}
             >
@@ -387,9 +406,15 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
             </div>
           ) : (
             <div className="fighter-list">
-              {fighters.map((f) => (
-                <div key={f.id} className="fighter-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
-                  {editingId === f.id ? (
+              {fighters.map((f) => {
+                const isExcess = f.active === false
+                return (
+                <div
+                  key={f.id}
+                  className="fighter-item"
+                  style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10, opacity: isExcess ? 0.55 : 1 }}
+                >
+                  {editingId === f.id && !isExcess ? (
                     <>
                       <div className="form-group" style={{ marginBottom: 8 }}>
                         <label>Nombre / Descripción</label>
@@ -445,14 +470,22 @@ export default function SetupPanel({ fighters, events = [], activeEventId, onSel
                               ({f.discipline === 'gi' ? 'GI' : 'No-Gi'})
                             </span>
                           )}
+                          {isExcess && (
+                            <span className="excess-badge" title="Excede tu plan — no se monitorea">
+                              Excede tu plan
+                            </span>
+                          )}
                         </div>
                       </div>
-                      <button className="btn-ghost" onClick={() => startEdit(f)} aria-label={`Editar ${f.name}`}><IconPencil size={15} /></button>
+                      {!isExcess && (
+                        <button className="btn-ghost" onClick={() => startEdit(f)} aria-label={`Editar ${f.name}`}><IconPencil size={15} /></button>
+                      )}
                       <button className="btn-danger" onClick={() => onRemove(f.id)} aria-label={`Eliminar ${f.name}`}><IconClose size={15} /></button>
                     </div>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

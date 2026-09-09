@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import LZString from 'lz-string'
 import Header from './components/Header'
 import SetupPanel from './components/SetupPanel'
@@ -14,6 +14,7 @@ import NotificationsModal from './components/NotificationsModal'
 import MyTournamentsModal from './components/MyTournamentsModal'
 import { IconGear } from './components/icons'
 import { saveTournaments } from './api/tournaments'
+import { listFighters, addFighterRemote, removeFighterRemote, migrateFighters } from './api/fighters'
 import { useAuth } from './auth/useAuth'
 
 // v2: match list moved to the event level; fighters no longer carry a URL.
@@ -99,6 +100,23 @@ function normalizeState(events, fighters, activeEventId) {
   return { events, fighters: nextFighters, activeEventId }
 }
 
+// Mirror of the server rule: within each event, the first `max` fighters ordered
+// by addedAt (insertion order as tiebreak) are ACTIVE; the rest are read-only
+// excess. Returns the Set of active fighter ids. `max` may be Infinity (no cap).
+function computeActiveIds(fighters, max) {
+  const byEvent = new Map()
+  fighters.forEach((f, i) => {
+    if (!byEvent.has(f.eventId)) byEvent.set(f.eventId, [])
+    byEvent.get(f.eventId).push({ f, i })
+  })
+  const set = new Set()
+  for (const list of byEvent.values()) {
+    list.sort((a, b) => (a.f.addedAt || 0) - (b.f.addedAt || 0) || a.i - b.i)
+    list.slice(0, max).forEach(({ f }) => set.add(f.id))
+  }
+  return set
+}
+
 function vibrate() {
   if (!navigator.vibrate) return
   navigator.vibrate([300, 100, 300, 100, 300])
@@ -135,7 +153,10 @@ function IconPlus() {
 }
 
 export default function App() {
-  const { user, status, isAdmin, credential, checking, error: authError, signIn, signOut } = useAuth()
+  const {
+    user, status, isAdmin, credential, checking, error: authError, signIn, signOut,
+    tier, maxFighters, refresh: refreshSession,
+  } = useAuth()
   const [tab, setTab] = useState('panel')
   // Normalize once so events/fighters/active id are consistent from render 1.
   const [seed] = useState(() => normalizeState(loadEvents(), loadFighters(), loadActiveEventId()))
@@ -160,6 +181,7 @@ export default function App() {
   }
   const intervalRef = useRef(null)
   const isLoadingRef = useRef(false) // ref-based lock — never stale in closures
+  const reconciledRef = useRef(false) // one-time roster reconcile with the server
 
   useEffect(() => {
     saveFighters(fighters)
@@ -198,8 +220,50 @@ export default function App() {
     return () => clearTimeout(t)
   }, [credential, events, fighters])
 
-  // Fighters belonging to the currently selected event.
-  const activeFighters = fighters.filter((f) => f.eventId === activeEventId)
+  // Reconcile the local roster with the authoritative server roster once per
+  // load. The server wins on membership + `active`. If the server has nothing
+  // yet but we have local fighters, seed it (one-time migration per event),
+  // preserving local ids so matchMap/notes stay attached.
+  useEffect(() => {
+    if (!credential || reconciledRef.current) return
+    reconciledRef.current = true
+    let cancelled = false
+    ;(async () => {
+      try {
+        let { fighters: serverFighters } = await listFighters(credential)
+        const local = loadFighters()
+        if (serverFighters.length === 0 && local.length > 0) {
+          await migrateFighters(credential, local)
+          ;({ fighters: serverFighters } = await listFighters(credential))
+        }
+        if (cancelled || serverFighters.length === 0) return
+        setFighters((prev) => {
+          const noteById = new Map(prev.map((f) => [f.id, f.note]))
+          return serverFighters.map((sf) => ({
+            ...sf,
+            note: sf.note ?? noteById.get(sf.id) ?? undefined,
+          }))
+        })
+      } catch {
+        // Offline / not deployed → keep working from localStorage.
+        reconciledRef.current = false
+      }
+    })()
+    return () => { cancelled = true }
+  }, [credential])
+
+  // Per-event quota. null (logged out / dev without server) → no cap enforced here.
+  const effectiveMax = Number.isFinite(maxFighters) ? maxFighters : Infinity
+  // Active set mirrors the server: excess (read-only) fighters are active:false.
+  const activeIds = useMemo(() => computeActiveIds(fighters, effectiveMax), [fighters, effectiveMax])
+
+  // Fighters of the selected event (Setup shows all, tagged with `active`).
+  const activeFighters = fighters
+    .filter((f) => f.eventId === activeEventId)
+    .map((f) => ({ ...f, active: activeIds.has(f.id) }))
+  // Only active fighters are tracked (panel, refresh, monitoring, sharing).
+  const trackedFighters = activeFighters.filter((f) => f.active)
+  const usedCount = trackedFighters.length
 
   const refresh = useCallback(async () => {
     // Only refresh the fighters of the active event, injecting the event's
@@ -208,7 +272,7 @@ export default function App() {
     const eventUrl = ev?.matchlistUrl || ''
     if (!eventUrl) return
     const toScrape = fighters
-      .filter((f) => f.eventId === activeEventId)
+      .filter((f) => f.eventId === activeEventId && activeIds.has(f.id))
       .map((f) => ({ ...f, matchlistUrl: eventUrl, bracketUrl: eventUrl }))
     if (toScrape.length === 0) return
     if (isLoadingRef.current) return  // debounce — reliable ref, never stale
@@ -247,20 +311,40 @@ export default function App() {
       isLoadingRef.current = false
       setIsLoading(false)
     }
-  }, [fighters, events, activeEventId])
+  }, [fighters, events, activeEventId, activeIds])
 
   useEffect(() => {
     clearInterval(intervalRef.current)
-    if (activeFighters.length === 0) return
+    if (trackedFighters.length === 0) return
     intervalRef.current = setInterval(refresh, intervalSec * 1000)
     return () => clearInterval(intervalRef.current)
-  }, [refresh, intervalSec, activeFighters.length])
+  }, [refresh, intervalSec, trackedFighters.length])
 
   // Import fighters from a decoded payload (array | { fighters, email, eventName }).
   // If the payload names an event, import into that event (creating it if needed)
   // and make it active; otherwise import into the current active event.
   // Dedupe is scoped to the target event. Returns the number of fighters added.
-  const importDecoded = useCallback((decoded) => {
+  // Add a fighter to a given event through the server (the quota is enforced
+  // there). Returns { ok } or { ok:false, code:'LIMIT_REACHED', used, max }.
+  // Without a credential (dev bypass / offline) it falls back to local-only.
+  const addFighterToEvent = useCallback(async (eventId, core) => {
+    if (!eventId) return { ok: false }
+    if (!credential) {
+      const local = { ...core, id: crypto.randomUUID(), eventId, addedAt: Date.now() }
+      setFighters((prev) => [...prev, local])
+      return { ok: true }
+    }
+    try {
+      const created = await addFighterRemote(credential, eventId, core)
+      setFighters((prev) => [...prev, created])
+      return { ok: true }
+    } catch (e) {
+      if (e.code === 'LIMIT_REACHED') return { ok: false, code: 'LIMIT_REACHED', used: e.used, max: e.max }
+      return { ok: false, error: e.message }
+    }
+  }, [credential])
+
+  const importDecoded = useCallback(async (decoded) => {
     if (!decoded) return 0
     const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
     const importedEmail = !Array.isArray(decoded) ? decoded.email : null
@@ -305,22 +389,33 @@ export default function App() {
     const existingKeys = new Set(
       fighters.filter((f) => f.eventId === targetId).map(fighterKey)
     )
-    const toAdd = importedFighters
+    const cores = importedFighters
       .filter((f) => !existingKeys.has(fighterKey(f)))
       .map((f) => {
         // Keep only the new model's fields; drop any per-fighter URL.
-        const base = { id: crypto.randomUUID(), eventId: targetId, name: f.name }
-        if (f.trackMode === 'fight') return { ...base, trackMode: 'fight', mat: f.mat, fightNum: f.fightNum }
-        return { ...base, discipline: f.discipline || null }
+        if (f.trackMode === 'fight') return { trackMode: 'fight', name: f.name, mat: f.mat, fightNum: f.fightNum }
+        return { name: f.name, discipline: f.discipline || null }
       })
-    if (toAdd.length > 0) setFighters((prev) => [...prev, ...toAdd])
+
+    // Route each import through the server so the per-event quota is enforced;
+    // stop counting once the plan is full (extras are simply not added).
+    let added = 0
+    let hitLimit = false
+    for (const core of cores) {
+      const res = await addFighterToEvent(targetId, core)
+      if (res.ok) added++
+      else if (res.code === 'LIMIT_REACHED') { hitLimit = true; break }
+    }
+    if (hitLimit) {
+      alert('Algunos seguimientos no se importaron: alcanzaste el límite de tu plan para este evento.')
+    }
 
     if (importedEmail?.serviceId) {
       setEmailConfig(importedEmail)
       localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(importedEmail))
     }
-    return toAdd.length
-  }, [activeEventId, events, fighters])
+    return added
+  }, [activeEventId, events, fighters, addFighterToEvent])
 
   // On load: check for ?import= / ?importz= param and merge fighters from QR
   useEffect(() => {
@@ -341,6 +436,7 @@ export default function App() {
     const ev = events.find((e) => e.id === activeEventId)
     const label = ev ? `«${ev.name}»` : 'este evento'
     if (!window.confirm(`¿Eliminar todos los luchadores de ${label}?`)) return
+    const removedIds = fighters.filter((f) => f.eventId === activeEventId).map((f) => f.id)
     setFighters((prev) => prev.filter((f) => f.eventId !== activeEventId))
     setMatchMap((prev) => {
       const next = { ...prev }
@@ -348,6 +444,7 @@ export default function App() {
       return next
     })
     setUrgentIds(new Set())
+    if (credential) for (const id of removedIds) removeFighterRemote(credential, id).catch(() => {})
   }
 
   function editFighter(id, updates) {
@@ -358,10 +455,13 @@ export default function App() {
     setFighters((prev) => prev.map((f) => f.id === id ? { ...f, note } : f))
   }
 
-  function addFighter(fighter) {
+  async function addFighter(fighter) {
     if (!activeEventId) return  // no active event → nothing to attach to
-    const newFighter = { ...fighter, id: crypto.randomUUID(), eventId: activeEventId }
-    setFighters((prev) => [...prev, newFighter])
+    const res = await addFighterToEvent(activeEventId, fighter)
+    if (!res.ok && res.code === 'LIMIT_REACHED') {
+      alert(`Alcanzaste el límite de tu plan (${res.max} por evento). Elimina un seguimiento para agregar otro.`)
+    }
+    return res
   }
 
   function createEvent(name, matchlistUrl) {
@@ -385,12 +485,14 @@ export default function App() {
     const ev = events.find((e) => e.id === id)
     if (!ev) return
     if (!window.confirm(`¿Eliminar el evento «${ev.name}» y todos sus luchadores?`)) return
+    const removedIds = fighters.filter((f) => f.eventId === id).map((f) => f.id)
     setFighters((prev) => prev.filter((f) => f.eventId !== id))
     setMatchMap((prev) => {
       const next = { ...prev }
       for (const f of fighters) if (f.eventId === id) delete next[f.id]
       return next
     })
+    if (credential) for (const rid of removedIds) removeFighterRemote(credential, rid).catch(() => {})
     setEvents((prev) => {
       const remaining = prev.filter((e) => e.id !== id)
       // No phantom "Evento 1": deleting the last event returns to the empty state.
@@ -419,6 +521,7 @@ export default function App() {
       delete next[id]
       return next
     })
+    if (credential) removeFighterRemote(credential, id).catch(() => { /* best effort */ })
   }
 
   function handleScanResult(data) {
@@ -450,13 +553,13 @@ export default function App() {
   }
 
   async function activateServerMonitoring() {
-    if (!activeFighters.length) return alert('No hay luchadores en este evento.')
+    if (!trackedFighters.length) return alert('No hay luchadores en este evento.')
     if (!emailConfig.serviceId) return alert('Configura las notificaciones de email primero.')
     const ev = events.find((e) => e.id === activeEventId)
     const eventUrl = ev?.matchlistUrl || ''
     if (!eventUrl) return alert('Este evento no tiene una match list configurada.')
     // Server cron / api/watch read `url` per fighter — inject the event's URL.
-    const payloadFighters = activeFighters.map((f) => ({ ...f, url: eventUrl, matchlistUrl: eventUrl, bracketUrl: eventUrl }))
+    const payloadFighters = trackedFighters.map((f) => ({ ...f, url: eventUrl, matchlistUrl: eventUrl, bracketUrl: eventUrl }))
     try {
       const res = await fetch('/api/register', {
         method: 'POST',
@@ -472,11 +575,11 @@ export default function App() {
   }
 
   const activeEvent = events.find((e) => e.id === activeEventId) || null
-  const isMonitoring = activeFighters.length > 0
-  const showSlowNotice = isLoading && activeFighters.length >= 6
+  const isMonitoring = trackedFighters.length > 0
+  const showSlowNotice = isLoading && trackedFighters.length >= 6
 
   // Sort fighters by next match time (earliest first, no-time goes to bottom)
-  const sortedFighters = [...activeFighters].sort((a, b) => {
+  const sortedFighters = [...trackedFighters].sort((a, b) => {
     const dA = matchMap[a.id]
     const dB = matchMap[b.id]
     const liveA = dA?.status === 'live' ? 0 : 1
@@ -506,7 +609,15 @@ export default function App() {
   }
 
   if (status !== 'approved') {
-    return <StatusScreen status={status} user={user} onSignOut={signOut} />
+    return (
+      <StatusScreen
+        status={status}
+        user={user}
+        onSignOut={signOut}
+        credential={credential}
+        onRedeemed={refreshSession}
+      />
+    )
   }
 
   return (
@@ -532,6 +643,9 @@ export default function App() {
           fighters={activeFighters}
           events={events}
           activeEventId={activeEventId}
+          maxFighters={effectiveMax === Infinity ? null : effectiveMax}
+          usedCount={usedCount}
+          tier={tier}
           onSelectEvent={selectEvent}
           onCreateEvent={createEvent}
           onRenameEvent={renameEvent}
@@ -574,7 +688,7 @@ export default function App() {
               ))}
             </select>
             <div className="spacer" />
-            {isAdmin && activeFighters.length > 0 && (
+            {isAdmin && trackedFighters.length > 0 && (
               <button className="btn-ghost" style={{ fontSize: 12, minHeight: 32, gap: 6 }} onClick={activateServerMonitoring}>
                 <IconGear size={14} />
                 Servidor
@@ -588,7 +702,7 @@ export default function App() {
             </div>
           )}
 
-          {activeFighters.length === 0 ? (
+          {trackedFighters.length === 0 ? (
             <div className="empty-state">
               <h2>Sin luchadores{activeEvent ? ` en «${activeEvent.name}»` : ''}</h2>
               <p>Agrega luchadores en la pestaña Setup para comenzar a monitorear.</p>
@@ -598,7 +712,7 @@ export default function App() {
             </div>
           ) : (
             <div className="cards-scroll">
-              <div className={`cards-grid ${gridClass(activeFighters.length)}`}>
+              <div className={`cards-grid ${gridClass(trackedFighters.length)}`}>
                 {sortedFighters.map((fighter) => (
                   <FighterCard
                     key={fighter.id}
@@ -638,7 +752,7 @@ export default function App() {
       </nav>
 
       {showQR && (
-        <QRModal fighters={activeFighters} eventName={activeEvent?.name} eventUrl={activeEvent?.matchlistUrl} emailConfig={emailConfig} onClose={() => setShowQR(false)} />
+        <QRModal fighters={trackedFighters} eventName={activeEvent?.name} eventUrl={activeEvent?.matchlistUrl} emailConfig={emailConfig} onClose={() => setShowQR(false)} />
       )}
       {showScanner && (
         <QRScanner onResult={handleScanResult} onClose={() => setShowScanner(false)} />

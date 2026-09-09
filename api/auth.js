@@ -42,6 +42,9 @@ export default async function handler(req) {
       ok: true,
       status: user.status,
       isAdmin: user.isAdmin,
+      tier: user.tier,
+      maxFighters: user.maxFighters,
+      features: user.features,
       user: { email: user.email, name: user.name, picture: user.picture },
     })
   } catch (err) {
