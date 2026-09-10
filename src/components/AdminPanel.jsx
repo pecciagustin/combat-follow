@@ -83,122 +83,6 @@ function TierEditor({ user, credential, onSaved }) {
   )
 }
 
-// Partner-code creation + listing.
-function CodesSection({ credential }) {
-  const [codes, setCodes] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [tier, setTier] = useState('team')
-  const [max, setMax] = useState(TIER_DEFAULT_MAX.team)
-  const [note, setNote] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [copied, setCopied] = useState('')
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const data = await adminApi(credential, 'listCodes')
-      setCodes(data.codes || [])
-    } catch (e) {
-      setError(e.message || 'No se pudieron cargar los códigos')
-    } finally {
-      setLoading(false)
-    }
-  }, [credential])
-
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch codes on mount
-  useEffect(() => { load() }, [load])
-
-  function changeTier(next) {
-    setTier(next)
-    setMax(TIER_DEFAULT_MAX[next])
-  }
-
-  async function create() {
-    setCreating(true)
-    setError('')
-    try {
-      const data = await adminApi(credential, 'createCode', {
-        tier,
-        maxFighters: Number(max),
-        note: note.trim(),
-      })
-      setCodes((prev) => [data.code, ...prev])
-      setNote('')
-    } catch (e) {
-      setError(e.message || 'No se pudo crear el código')
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  function copy(code) {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(code)
-      setTimeout(() => setCopied(''), 2000)
-    })
-  }
-
-  return (
-    <div className="codes-section">
-      <h3 className="admin-title" style={{ fontSize: 16 }}>Códigos de partner</h3>
-
-      <div className="code-create">
-        <select value={tier} onChange={(e) => changeTier(e.target.value)} disabled={creating}>
-          {TIERS.map((t) => <option key={t} value={t}>{TIER_LABEL[t]}</option>)}
-        </select>
-        <input
-          type="number"
-          min="0"
-          value={max}
-          onChange={(e) => setMax(e.target.value)}
-          disabled={creating}
-          aria-label="Cupo"
-          title="Cupo de peleadores por evento"
-        />
-        <input
-          type="text"
-          placeholder="Nota (ej: Academia X)"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          disabled={creating}
-        />
-        <button className="btn-approve" onClick={create} disabled={creating}>
-          {creating ? '…' : 'Crear código'}
-        </button>
-      </div>
-
-      {error && <div className="admin-error">{error}</div>}
-
-      {loading ? (
-        <p className="admin-sub" style={{ padding: 12 }}>Cargando códigos…</p>
-      ) : codes.length === 0 ? (
-        <p className="admin-sub" style={{ padding: 12 }}>Todavía no hay códigos.</p>
-      ) : (
-        <div className="code-list">
-          {codes.map((c) => (
-            <div key={c.code} className="code-row">
-              <div className="code-main">
-                <span className="code-value">{c.code}</span>
-                <span className="code-meta">
-                  {TIER_LABEL[c.tier] || c.tier} · {c.maxFighters} · {c.note || 'sin nota'}
-                </span>
-                <span className="code-meta">
-                  {c.redeemedBy ? `Canjeado por ${c.redeemedBy} (${fmtDate(c.redeemedAt)})` : 'Sin canjear'}
-                </span>
-              </div>
-              <button className="btn-ghost" onClick={() => copy(c.code)} disabled={!!c.redeemedBy}>
-                {copied === c.code ? '✓' : 'Copiar'}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 export default function AdminPanel({ credential, adminEmail }) {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -314,8 +198,6 @@ export default function AdminPanel({ credential, adminEmail }) {
           })}
         </div>
       )}
-
-      <CodesSection credential={credential} />
     </div>
   )
 }

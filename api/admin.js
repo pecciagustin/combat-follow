@@ -5,30 +5,7 @@ import {
   setUserStatus,
   setUserTier,
   ADMIN_EMAIL,
-  VALID_TIERS,
-  TIER_DEFAULTS,
-  normalizeMaxFighters,
-  normalizeFeatures,
 } from '../lib/serverAuth.js'
-
-const CODES_KEY = 'cf:codes'
-
-// Human-friendly one-time partner code, e.g. "CF-7Q4K-9XM2" (no ambiguous chars).
-function generateCode() {
-  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-  const bytes = crypto.getRandomValues(new Uint8Array(8))
-  let s = ''
-  for (let i = 0; i < 8; i++) {
-    if (i === 4) s += '-'
-    s += alphabet[bytes[i] % alphabet.length]
-  }
-  return `CF-${s.slice(0, 4)}-${s.slice(5)}`
-}
-
-function parse(raw) {
-  if (!raw) return null
-  return typeof raw === 'string' ? JSON.parse(raw) : raw
-}
 
 export const config = { runtime: 'edge' }
 
@@ -87,36 +64,6 @@ export default async function handler(req) {
         features: body.features,
       })
       return json({ ok: true, user })
-    }
-    // Create a one-time partner code carrying a tier + quota + features.
-    if (body.action === 'createCode') {
-      if (!VALID_TIERS.includes(body.tier)) return json({ error: 'Invalid tier' }, 400)
-      const tier = body.tier
-      const code = generateCode()
-      const record = {
-        code,
-        tier,
-        maxFighters: normalizeMaxFighters(
-          body.maxFighters === undefined || body.maxFighters === null || body.maxFighters === ''
-            ? TIER_DEFAULTS[tier]
-            : body.maxFighters,
-          tier,
-        ),
-        features: normalizeFeatures(body.features),
-        note: String(body.note || '').slice(0, 200),
-        createdAt: Date.now(),
-        createdBy: ADMIN_EMAIL,
-        redeemedBy: null,
-        redeemedAt: null,
-      }
-      await redis.hset(CODES_KEY, { [code]: JSON.stringify(record) })
-      return json({ ok: true, code: record })
-    }
-    if (body.action === 'listCodes') {
-      const all = await redis.hgetall(CODES_KEY)
-      const codes = all ? Object.values(all).map(parse).filter(Boolean) : []
-      codes.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-      return json({ ok: true, codes })
     }
     return json({ error: 'Unknown action' }, 400)
   } catch (err) {
