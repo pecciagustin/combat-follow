@@ -88,15 +88,3 @@ export async function adminApi(credential, action, params = {}) {
   if (!res.ok) throw new Error(data.error || 'Error del servidor')
   return data
 }
-
-// Redeem a partner code. On success the account is configured + auto-approved.
-export async function redeemCode(credential, code) {
-  const res = await fetch('/api/redeem', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ credential, code }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'No se pudo canjear el código')
-  return data // { ok, status, tier, maxFighters, features }
-}

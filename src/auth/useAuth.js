@@ -49,8 +49,8 @@ export function useAuth() {
     }
   }, [applySession])
 
-  // Re-verify the stored credential and refresh status/tier (e.g. after
-  // redeeming a code or an admin changing the tier). No-op when logged out.
+  // Re-verify the stored credential and refresh status/tier (e.g. after an
+  // admin approves the account or changes the tier). No-op when logged out.
   const refresh = useCallback(async () => {
     const stored = loadStoredSession()
     if (!stored?.credential) return null

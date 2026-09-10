@@ -155,7 +155,7 @@ function IconPlus() {
 export default function App() {
   const {
     user, status, isAdmin, credential, checking, error: authError, signIn, signOut,
-    tier, maxFighters, refresh: refreshSession,
+    tier, maxFighters,
   } = useAuth()
   const [tab, setTab] = useState('panel')
   // Normalize once so events/fighters/active id are consistent from render 1.
@@ -614,8 +614,6 @@ export default function App() {
         status={status}
         user={user}
         onSignOut={signOut}
-        credential={credential}
-        onRedeemed={refreshSession}
       />
     )
   }
