@@ -1032,6 +1032,78 @@ button:active {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.event-scoped-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ─── Admin: tech-partner links ───────────────────────── */
+.partners-section {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+}
+.partner-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+.partner-form-row { display: flex; gap: 8px; }
+.partner-form-row input[type="number"] { width: 90px; flex: 0 0 auto; }
+.partner-form input {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+.partner-form input:focus { border-color: var(--accent); }
+.partner-list { display: flex; flex-direction: column; gap: 8px; padding: 0 16px; }
+.partner-row {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.partner-head { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.partner-main { min-width: 0; flex: 1; }
+.partner-name { font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.partner-off {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.partner-link {
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.partner-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.partner-actions button { min-height: 32px; font-size: 12px; padding: 0 10px; }
+.partner-members {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.partner-member { font-size: 13px; color: var(--text); }
+.admin-source { color: var(--accent); }
 .event-empty {
   margin-top: 4px;
 }
