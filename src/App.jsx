@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import LZString from 'lz-string'
 import Header from './components/Header'
 import SetupPanel from './components/SetupPanel'
+import AcademiasPanel from './components/AcademiasPanel'
 import FighterCard from './components/FighterCard'
 import { scrapeAllFighters } from './api/scrape'
 import QRModal from './components/QRModal'
@@ -147,6 +148,9 @@ function IconSetup() {
 }
 function IconAdmin() {
   return <svg width="23" height="23" viewBox="0 0 24 24" {...svg}><path d="M12 3 5 6v5c0 4 3 7 7 9 4-2 7-5 7-9V6l-7-3z" /></svg>
+}
+function IconAcademia() {
+  return <svg width="23" height="23" viewBox="0 0 24 24" {...svg}><path d="M3 21h18" /><path d="M5 21V10l7-4 7 4v11" /><line x1="9" y1="21" x2="9" y2="14" /><line x1="15" y1="21" x2="15" y2="14" /></svg>
 }
 function IconPlus() {
   return <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
@@ -729,10 +733,23 @@ export default function App() {
         </div>
       )}
 
+      {tab === 'academias' && (
+        <AcademiasPanel
+          activeEvent={activeEvent}
+          events={events}
+          activeEventId={activeEventId}
+          onSelectEvent={selectEvent}
+        />
+      )}
+
       <nav className="tabbar">
         <button className={`tab${tab === 'panel' ? ' active' : ''}`} onClick={() => setTab('panel')}>
           <IconPanel />
           Panel
+        </button>
+        <button className={`tab${tab === 'academias' ? ' active' : ''}`} onClick={() => setTab('academias')}>
+          <IconAcademia />
+          Academias
         </button>
         <button className={`tab${tab === 'setup' ? ' active' : ''}`} onClick={() => setTab('setup')}>
           <IconSetup />
