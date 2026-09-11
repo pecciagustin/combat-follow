@@ -152,9 +152,6 @@ function IconAdmin() {
 function IconAcademia() {
   return <svg width="23" height="23" viewBox="0 0 24 24" {...svg}><path d="M3 21h18" /><path d="M5 21V10l7-4 7 4v11" /><line x1="9" y1="21" x2="9" y2="14" /><line x1="15" y1="21" x2="15" y2="14" /></svg>
 }
-function IconPlus() {
-  return <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-}
 
 export default function App() {
   const {
@@ -754,9 +751,6 @@ export default function App() {
         <button className={`tab${tab === 'setup' ? ' active' : ''}`} onClick={() => setTab('setup')}>
           <IconSetup />
           Setup
-        </button>
-        <button className="fab" onClick={() => setTab('setup')} aria-label="Agregar seguimiento">
-          <IconPlus />
         </button>
         {isAdmin && (
           <button className={`tab${tab === 'admin' ? ' active' : ''}`} onClick={() => setTab('admin')}>
