@@ -2,6 +2,9 @@ import { useState } from 'react'
 
 const PLACEMENT_LABEL = { 1: '1er lugar', 2: '2do lugar', 3: '3er lugar' }
 
+// Some sources name the mat "Mat 1" and others just "1"; avoid rendering "Mat Mat 1".
+const hasMatPrefix = (mat) => /^\s*mat\b/i.test(String(mat))
+
 function FightTrackCard({ fighter, matchData, isLoading, isUrgent, onNoteChange }) {
   const [expanded, setExpanded] = useState(false)
   const status = matchData?.status
@@ -167,7 +170,7 @@ export default function FighterCard({ fighter, matchData, isLoading, isChanged, 
               <div className="card-time-compact">{matchData.time || '--:--'}</div>
               {matchData.mat && (
                 <div className="card-mat-compact">
-                  Mat <strong>{matchData.mat}</strong>
+                  {hasMatPrefix(matchData.mat) ? <strong>{matchData.mat}</strong> : <>Mat <strong>{matchData.mat}</strong></>}
                   {matchData.fight && <> · #{matchData.fight}</>}
                 </div>
               )}

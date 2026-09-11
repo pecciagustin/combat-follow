@@ -219,6 +219,14 @@ function extractSmooothcompEventBase(url) {
   return m ? m[1] : null
 }
 
+// Smoothcomp and its white-label instances (e.g. AJP / ajptour.com) share the
+// same /schedule/new JSON API (CORS-enabled). Their matchlist HTML page, by
+// contrast, is behind a Cloudflare challenge, so it must be read via the JSON
+// API, not scraped directly. bjjcompsystem (IBJJF) is NOT a Smoothcomp instance.
+function isSmoothcompApiUrl(url) {
+  return !!url && !url.includes('bjjcompsystem.com') && (/smoothcomp\.com/.test(url) || /ajptour\.com/.test(url))
+}
+
 // Format a Smoothcomp `estimated_start` ISO string to local "HH:MM" (or null).
 function fmtTime(estimatedStart) {
   if (!estimatedStart) return null
@@ -438,7 +446,7 @@ export async function scrapeAllFighters(fighters) {
   // Pre-fetch smoothcomp JSON API data once per unique event (bypasses Cloudflare)
   const smoothcompFighters = fighters.filter(f => {
     const url = f.matchlistUrl || f.bracketUrl || ''
-    return !url.includes('bjjcompsystem.com') && url.match(/smoothcomp\.com/)
+    return isSmoothcompApiUrl(url)
   })
   const eventBaseUrls = [...new Set(
     smoothcompFighters
@@ -466,7 +474,7 @@ export async function scrapeAllFighters(fighters) {
           if (data) return { id: fighter.id, data: { ...data, trackMode: 'fight' }, error: null }
           return { id: fighter.id, data: { trackMode: 'fight', mat: fighter.mat, fight: fighter.fightNum, fighters: [], status: 'notfound' }, error: null }
         }
-        if (url.match(/smoothcomp\.com/)) {
+        if (isSmoothcompApiUrl(url)) {
           const baseUrl = extractSmooothcompEventBase(url)
           const matData = baseUrl ? eventCache[baseUrl] : null
           if (!matData) throw new Error('No se pudo obtener datos del evento')
@@ -489,8 +497,8 @@ export async function scrapeAllFighters(fighters) {
         return { id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null }
       }
 
-      // ── Smoothcomp — JSON API (no Cloudflare) ─────────
-      if (url.match(/smoothcomp\.com/)) {
+      // ── Smoothcomp / AJP — JSON API (no Cloudflare) ───
+      if (isSmoothcompApiUrl(url)) {
         const baseUrl = extractSmooothcompEventBase(url)
         const renderResults = baseUrl ? eventCache[baseUrl] : null
         if (!renderResults) throw new Error('No se pudo obtener datos del evento')
