@@ -514,14 +514,14 @@ export async function scrapeAllFighters(fighters) {
 }
 
 // ── Event-wide match list (for the Academias tab) ──────────
-// Fetches every match of a Smoothcomp event and returns them normalized, keeping
-// each seat's club so the UI can filter by academy. Smoothcomp-only: the club is
-// not exposed by bjjcompsystem/AJP, so those return { supported: false }.
+// Fetches every match of an event and returns them normalized, keeping each
+// seat's club so the UI can filter by academy. Works on any Smoothcomp-based
+// platform that exposes the /schedule/new JSON API and CORS — Smoothcomp itself
+// and AJP (ajptour.com, a white-label Smoothcomp instance). IBJJF
+// (bjjcompsystem) does not expose club data, so it returns { supported: false }.
 export async function scrapeEventMatches(eventUrl) {
   const url = eventUrl || ''
-  if (url.includes('bjjcompsystem.com') || !/smoothcomp\.com/.test(url)) {
-    return { supported: false, matches: [] }
-  }
+  if (url.includes('bjjcompsystem.com')) return { supported: false, matches: [] }
   const baseUrl = extractSmooothcompEventBase(url)
   if (!baseUrl) return { supported: false, matches: [] }
 

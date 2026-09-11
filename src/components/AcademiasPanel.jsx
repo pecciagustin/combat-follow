@@ -163,7 +163,7 @@ export default function AcademiasPanel({ activeEvent, events, activeEventId, onS
     body = (
       <div className="empty-state">
         <h2>No disponible</h2>
-        <p>El filtro por academia solo está disponible en eventos de Smoothcomp.</p>
+        <p>El filtro por academia funciona en eventos de Smoothcomp y AJP, pero no en IBJJF.</p>
       </div>
     )
   } else if (loading && !loaded) {
