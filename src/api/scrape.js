@@ -219,6 +219,20 @@ function extractSmooothcompEventBase(url) {
   return m ? m[1] : null
 }
 
+// Format a Smoothcomp `estimated_start` ISO string to local "HH:MM" (or null).
+function fmtTime(estimatedStart) {
+  if (!estimatedStart) return null
+  const d = new Date(estimatedStart)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// Map a Smoothcomp match `state` to our status vocabulary.
+function stateToStatus(state) {
+  if (state === 'running') return 'live'
+  if (state === 'finished' || state === 'decided' || state === 'wo') return 'finished'
+  return 'upcoming'
+}
+
 async function fetchJson(url) {
   const res = await fetchWithTimeout(url, { credentials: 'omit', cache: 'no-store' }, 15000)
   if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
@@ -497,4 +511,39 @@ export async function scrapeAllFighters(fighters) {
     }
   }))
   return results
+}
+
+// ── Event-wide match list (for the Academias tab) ──────────
+// Fetches every match of a Smoothcomp event and returns them normalized, keeping
+// each seat's club so the UI can filter by academy. Smoothcomp-only: the club is
+// not exposed by bjjcompsystem/AJP, so those return { supported: false }.
+export async function scrapeEventMatches(eventUrl) {
+  const url = eventUrl || ''
+  if (url.includes('bjjcompsystem.com') || !/smoothcomp\.com/.test(url)) {
+    return { supported: false, matches: [] }
+  }
+  const baseUrl = extractSmooothcompEventBase(url)
+  if (!baseUrl) return { supported: false, matches: [] }
+
+  const matData = await fetchSmooothcompEventData(baseUrl)
+
+  const matches = []
+  for (const { mat, matches: matMatches } of matData) {
+    for (const match of matMatches) {
+      const seats = (match.seats || [])
+        .filter((s) => s && s.name)
+        .map((s) => ({ name: s.name, club: s.club || null, country: s.country || null }))
+      matches.push({
+        id: match.id,
+        mat: mat.name || null,
+        fight: match.mat_match_nr || String(match.match_nr),
+        category: match.group || null,
+        time: fmtTime(match.estimated_start),
+        _start: match.estimated_start ? new Date(match.estimated_start).getTime() : null,
+        status: stateToStatus(match.state || 'seeded'),
+        seats,
+      })
+    }
+  }
+  return { supported: true, matches }
 }
