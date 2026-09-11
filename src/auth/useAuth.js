@@ -4,7 +4,25 @@ import {
   loadStoredSession,
   saveStoredSession,
   verifyWithServer,
+  readPartnerToken,
+  savePartnerToken,
 } from './googleAuth'
+
+// Build the persisted session shape from a credential + /api/auth response.
+// `partner` is only present the first time they arrive through a partner link.
+function sessionFromRes(credential, res, prevPartner) {
+  return {
+    credential,
+    user: res.user,
+    status: res.status,
+    isAdmin: res.isAdmin,
+    tier: res.tier,
+    maxFighters: res.maxFighters,
+    features: res.features,
+    scopedEventId: res.scopedEventId ?? null,
+    partner: res.partner ?? prevPartner ?? null,
+  }
+}
 
 // Auth state hook. The backend is the source of truth for approval status:
 // - signIn(credential): verify with the server, persist the session.
@@ -28,19 +46,15 @@ export function useAuth() {
   }, [applySession])
 
   // Called with the raw Google credential (JWT) from the sign-in button.
+  // Picks up a pending partner token (from a ?partner=… link) so the server can
+  // auto-approve + scope the account, then clears it once redeemed.
   const signIn = useCallback(async (credential) => {
     setError('')
     try {
-      const res = await verifyWithServer(credential)
-      applySession({
-        credential,
-        user: res.user,
-        status: res.status,
-        isAdmin: res.isAdmin,
-        tier: res.tier,
-        maxFighters: res.maxFighters,
-        features: res.features,
-      })
+      const partnerToken = readPartnerToken()
+      const res = await verifyWithServer(credential, partnerToken)
+      if (res.partner) savePartnerToken(null)
+      applySession(sessionFromRes(credential, res))
       return res
     } catch (e) {
       setError(e.message || 'No se pudo iniciar sesión')
@@ -55,15 +69,7 @@ export function useAuth() {
     const stored = loadStoredSession()
     if (!stored?.credential) return null
     const res = await verifyWithServer(stored.credential)
-    applySession({
-      credential: stored.credential,
-      user: res.user,
-      status: res.status,
-      isAdmin: res.isAdmin,
-      tier: res.tier,
-      maxFighters: res.maxFighters,
-      features: res.features,
-    })
+    applySession(sessionFromRes(stored.credential, res, stored.partner))
     return res
   }, [applySession])
 
@@ -76,15 +82,7 @@ export function useAuth() {
     verifyWithServer(stored.credential)
       .then((res) => {
         if (cancelled) return
-        applySession({
-          credential: stored.credential,
-          user: res.user,
-          status: res.status,
-          isAdmin: res.isAdmin,
-          tier: res.tier,
-          maxFighters: res.maxFighters,
-          features: res.features,
-        })
+        applySession(sessionFromRes(stored.credential, res, stored.partner))
       })
       .catch(() => {
         // Token expired or invalid → require a fresh sign-in.
@@ -114,6 +112,8 @@ export function useAuth() {
       tier: 'team',
       maxFighters: 15,
       features: { realtimeAlerts: false },
+      scopedEventId: null,
+      partnerEvent: null,
       credential: null,
       checking: false,
       error: '',
@@ -130,6 +130,8 @@ export function useAuth() {
     tier: session?.tier || null,
     maxFighters: session?.maxFighters ?? null,
     features: session?.features || null,
+    scopedEventId: session?.scopedEventId ?? null,
+    partnerEvent: session?.partner ?? null,
     credential: session?.credential || null,
     checking,
     error,

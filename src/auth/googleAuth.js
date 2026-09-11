@@ -4,6 +4,18 @@
 
 export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 export const AUTH_STORAGE_KEY = 'combat-follow-user'
+// A pending tech-partner token captured from ?partner=… before sign-in.
+export const PARTNER_TOKEN_KEY = 'combat-follow-partner-token'
+
+export function readPartnerToken() {
+  try { return localStorage.getItem(PARTNER_TOKEN_KEY) || null } catch { return null }
+}
+export function savePartnerToken(token) {
+  try {
+    if (token) localStorage.setItem(PARTNER_TOKEN_KEY, token)
+    else localStorage.removeItem(PARTNER_TOKEN_KEY)
+  } catch { /* ignore */ }
+}
 
 const GSI_SRC = 'https://accounts.google.com/gsi/client'
 let gsiPromise = null
@@ -66,15 +78,15 @@ export function saveStoredSession(session) {
 
 // Send the Google credential to the backend, which verifies it and returns the
 // user's approval status. Throws on invalid/expired token or network error.
-export async function verifyWithServer(credential) {
+export async function verifyWithServer(credential, partnerToken) {
   const res = await fetch('/api/auth', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ credential }),
+    body: JSON.stringify({ credential, ...(partnerToken ? { partnerToken } : {}) }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'No se pudo verificar la sesión')
-  return data // { ok, status, isAdmin, user }
+  return data // { ok, status, isAdmin, tier, maxFighters, features, scopedEventId, partner, user }
 }
 
 // Admin-only API. `credential` must belong to the admin account.

@@ -4,6 +4,11 @@ import {
   listUsers,
   setUserStatus,
   setUserTier,
+  setUserScope,
+  createPartner,
+  listPartners,
+  setPartnerActive,
+  listPartnerMembers,
   ADMIN_EMAIL,
 } from '../lib/serverAuth.js'
 
@@ -64,6 +69,33 @@ export default async function handler(req) {
         features: body.features,
       })
       return json({ ok: true, user })
+    }
+    // Lift/set an account's event scope (null clears it → full account).
+    if (body.action === 'setUserScope') {
+      const user = await setUserScope(redis, body.email, body.scopedEventId ?? null)
+      return json({ ok: true, user })
+    }
+
+    // ── Tech-partner links ──
+    if (body.action === 'createPartner') {
+      const partner = await createPartner(redis, {
+        eventName: body.eventName,
+        matchlistUrl: body.matchlistUrl,
+        maxFighters: body.maxFighters,
+        note: body.note,
+        createdBy: payload.email,
+      })
+      return json({ ok: true, partner })
+    }
+    if (body.action === 'listPartners') {
+      return json({ ok: true, partners: await listPartners(redis) })
+    }
+    if (body.action === 'setPartnerActive') {
+      const partner = await setPartnerActive(redis, body.token, body.active)
+      return json({ ok: true, partner })
+    }
+    if (body.action === 'listPartnerMembers') {
+      return json({ ok: true, members: await listPartnerMembers(redis, body.token) })
     }
     return json({ error: 'Unknown action' }, 400)
   } catch (err) {

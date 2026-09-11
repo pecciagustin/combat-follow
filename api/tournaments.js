@@ -52,8 +52,9 @@ export default async function handler(req) {
     const redis = getRedis()
 
     // Only approved accounts may read/write their archive (server-side gate).
+    let me
     try {
-      await requireApprovedUser(redis, payload)
+      me = await requireApprovedUser(redis, payload)
     } catch (err) {
       return json({ error: err.message || 'No autorizado' }, 403)
     }
@@ -72,6 +73,8 @@ export default async function handler(req) {
       const entries = {}
       for (const t of list) {
         if (!t || !t.id) continue
+        // Partner-scoped accounts only archive their one allowed event.
+        if (me.scopedEventId && t.id !== me.scopedEventId) continue
         entries[t.id] = JSON.stringify(t)
       }
       if (Object.keys(entries).length > 0) await redis.hset(key, entries)

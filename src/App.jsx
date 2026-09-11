@@ -17,6 +17,7 @@ import { IconGear } from './components/icons'
 import { saveTournaments } from './api/tournaments'
 import { listFighters, addFighterRemote, removeFighterRemote, migrateFighters } from './api/fighters'
 import { useAuth } from './auth/useAuth'
+import { savePartnerToken } from './auth/googleAuth'
 
 // v2: match list moved to the event level; fighters no longer carry a URL.
 // Bumping the keys starts fresh and ignores legacy data (kept intact, reversible).
@@ -156,8 +157,9 @@ function IconAcademia() {
 export default function App() {
   const {
     user, status, isAdmin, credential, checking, error: authError, signIn, signOut,
-    tier, maxFighters,
+    tier, maxFighters, scopedEventId, partnerEvent,
   } = useAuth()
+  const isScoped = !!scopedEventId
   const [tab, setTab] = useState('panel')
   // Normalize once so events/fighters/active id are consistent from render 1.
   const [seed] = useState(() => normalizeState(loadEvents(), loadFighters(), loadActiveEventId()))
@@ -196,6 +198,24 @@ export default function App() {
     if (activeEventId) localStorage.setItem(ACTIVE_EVENT_KEY, activeEventId)
     else localStorage.removeItem(ACTIVE_EVENT_KEY)
   }, [activeEventId])
+
+  // Partner-scoped accounts: ensure the partner event exists locally (with its
+  // canonical id from the server) and is the active one. The account can only
+  // ever use this event (the server rejects any other).
+  /* eslint-disable react-hooks/set-state-in-effect -- one-time pre-load of the partner event */
+  useEffect(() => {
+    if (!partnerEvent?.eventId) return
+    const { eventId, eventName, matchlistUrl } = partnerEvent
+    setEvents((prev) => {
+      const exists = prev.some((e) => e.id === eventId)
+      if (exists) {
+        return prev.map((e) => (e.id === eventId ? { ...e, name: eventName, matchlistUrl } : e))
+      }
+      return [...prev, { id: eventId, name: eventName, matchlistUrl }]
+    })
+    setActiveEventId(eventId)
+  }, [partnerEvent])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Sync each event (with its fighters) to the user's account archive, debounced.
   // Upsert-only on the server, so deleting an event locally keeps it in "Mis
@@ -418,9 +438,15 @@ export default function App() {
     return added
   }, [activeEventId, events, fighters, addFighterToEvent])
 
-  // On load: check for ?import= / ?importz= param and merge fighters from QR
+  // On load: capture a ?partner=<token> affiliate link (consumed at sign-in by
+  // useAuth), then check for ?import= / ?importz= param and merge fighters from QR.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    const partnerToken = params.get('partner')
+    if (partnerToken) {
+      savePartnerToken(partnerToken)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
     if (params.get('import') || params.get('importz')) {
       try {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time import on mount
@@ -576,6 +602,8 @@ export default function App() {
   }
 
   const activeEvent = events.find((e) => e.id === activeEventId) || null
+  // Scoped accounts only ever see their one partner event across the whole UI.
+  const visibleEvents = isScoped ? events.filter((e) => e.id === scopedEventId) : events
   const isMonitoring = trackedFighters.length > 0
   const showSlowNotice = isLoading && trackedFighters.length >= 6
 
@@ -640,7 +668,8 @@ export default function App() {
       {tab === 'setup' && (
         <SetupPanel
           fighters={activeFighters}
-          events={events}
+          events={visibleEvents}
+          scoped={isScoped}
           activeEventId={activeEventId}
           maxFighters={effectiveMax === Infinity ? null : effectiveMax}
           usedCount={usedCount}
@@ -661,9 +690,9 @@ export default function App() {
 
       {tab === 'panel' && (
         <div className="panel-screen">
-          {events.length > 1 && (
+          {visibleEvents.length > 1 && (
             <div className="event-chips" style={{ padding: '12px 16px 0' }}>
-              {events.map((ev) => (
+              {visibleEvents.map((ev) => (
                 <button
                   key={ev.id}
                   className={`event-chip${ev.id === activeEventId ? ' active' : ''}`}
@@ -733,7 +762,7 @@ export default function App() {
       {tab === 'academias' && (
         <AcademiasPanel
           activeEvent={activeEvent}
-          events={events}
+          events={visibleEvents}
           activeEventId={activeEventId}
           onSelectEvent={selectEvent}
         />

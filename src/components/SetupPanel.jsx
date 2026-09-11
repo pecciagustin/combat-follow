@@ -28,7 +28,7 @@ function buildWatchUrl(fighters, eventUrl) {
   return `https://combat-follow.vercel.app/api/watch?f=${encoded}`
 }
 
-export default function SetupPanel({ fighters, events = [], activeEventId, maxFighters = null, usedCount = 0, tier = null, onSelectEvent, onCreateEvent, onRenameEvent, onDeleteEvent, onAdd, onRemove, onEdit, onShowQR, onShowScanner, onClearAll, onPasteImport }) {
+export default function SetupPanel({ fighters, events = [], scoped = false, activeEventId, maxFighters = null, usedCount = 0, tier = null, onSelectEvent, onCreateEvent, onRenameEvent, onDeleteEvent, onAdd, onRemove, onEdit, onShowQR, onShowScanner, onClearAll, onPasteImport }) {
   const [addMode, setAddMode] = useState('fighter') // 'fighter' | 'fight'
   // Per-event quota (comfort UI only — the backend is the real gate).
   const hasCap = maxFighters != null && Number.isFinite(maxFighters)
@@ -182,6 +182,17 @@ export default function SetupPanel({ fighters, events = [], activeEventId, maxFi
   return (
     <div className="setup-panel">
       {/* ── Event bar ── */}
+      {scoped ? (
+        // Partner-scoped account: the event is fixed, no management controls.
+        <div className="event-bar">
+          <div className="event-scoped-name">{activeEvent?.name || 'Evento'}</div>
+          {activeEvent?.matchlistUrl && (
+            <div className="event-matchlist" title={activeEvent.matchlistUrl}>
+              Match list: {activeEvent.matchlistUrl}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="event-bar">
         <div className="event-bar-row">
           <select
@@ -244,6 +255,7 @@ export default function SetupPanel({ fighters, events = [], activeEventId, maxFi
           </div>
         )}
       </div>
+      )}
 
       {/* ── Mode toggle ── */}
       <div className="add-fighter-form">

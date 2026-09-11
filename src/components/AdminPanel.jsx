@@ -83,6 +83,155 @@ function TierEditor({ user, credential, onSaved }) {
   )
 }
 
+// Tech-partner links: create an affiliate link for an event that auto-approves
+// and scopes whoever joins, and see who joined through each one.
+function PartnersSection({ credential }) {
+  const [partners, setPartners] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ eventName: '', matchlistUrl: '', maxFighters: 15, note: '' })
+  const [creating, setCreating] = useState(false)
+  const [copied, setCopied] = useState('')
+  const [membersFor, setMembersFor] = useState(null)
+  const [members, setMembers] = useState([])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const d = await adminApi(credential, 'listPartners')
+      setPartners(d.partners || [])
+    } catch (e) {
+      setError(e.message || 'No se pudo cargar')
+    } finally {
+      setLoading(false)
+    }
+  }, [credential])
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount
+  useEffect(() => { load() }, [load])
+
+  const linkFor = (token) => `${window.location.origin}/?partner=${token}`
+
+  async function create() {
+    if (!form.eventName.trim() || !form.matchlistUrl.trim()) return
+    setCreating(true)
+    setError('')
+    try {
+      const d = await adminApi(credential, 'createPartner', {
+        eventName: form.eventName.trim(),
+        matchlistUrl: form.matchlistUrl.trim(),
+        maxFighters: Number(form.maxFighters),
+        note: form.note.trim(),
+      })
+      setPartners((prev) => [d.partner, ...prev])
+      setForm({ eventName: '', matchlistUrl: '', maxFighters: 15, note: '' })
+      setOpen(false)
+    } catch (e) {
+      setError(e.message || 'Error al crear')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function toggleActive(p) {
+    setError('')
+    try {
+      const d = await adminApi(credential, 'setPartnerActive', { token: p.token, active: !p.active })
+      setPartners((prev) => prev.map((x) => (x.token === p.token ? d.partner : x)))
+    } catch (e) {
+      setError(e.message || 'Error')
+    }
+  }
+
+  async function copyLink(token) {
+    try {
+      await navigator.clipboard.writeText(linkFor(token))
+      setCopied(token)
+      setTimeout(() => setCopied(''), 1500)
+    } catch { /* ignore */ }
+  }
+
+  async function showMembers(token) {
+    if (membersFor === token) { setMembersFor(null); setMembers([]); return }
+    setMembersFor(token)
+    setMembers([])
+    try {
+      const d = await adminApi(credential, 'listPartnerMembers', { token })
+      setMembers(d.members || [])
+    } catch (e) {
+      setError(e.message || 'Error')
+    }
+  }
+
+  return (
+    <div className="partners-section">
+      <div className="admin-header">
+        <div>
+          <h2 className="admin-title">Partners (links de evento)</h2>
+          <p className="admin-sub">{partners.length} link(s)</p>
+        </div>
+        <button className="btn-ghost" onClick={() => setOpen((o) => !o)}>{open ? 'Cancelar' : '+ Nuevo'}</button>
+      </div>
+
+      {error && <div className="admin-error">{error}</div>}
+
+      {open && (
+        <div className="partner-form">
+          <input placeholder="Nombre del evento…" value={form.eventName} onChange={(e) => setForm({ ...form, eventName: e.target.value })} autoComplete="off" />
+          <input placeholder="Match list (URL)…" value={form.matchlistUrl} onChange={(e) => setForm({ ...form, matchlistUrl: e.target.value })} autoComplete="off" autoCapitalize="off" autoCorrect="off" />
+          <div className="partner-form-row">
+            <input type="number" min="1" value={form.maxFighters} onChange={(e) => setForm({ ...form, maxFighters: e.target.value })} aria-label="Cupo por atleta" title="Cupo de seguimientos por atleta" />
+            <input placeholder="Nota (opcional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} autoComplete="off" />
+          </div>
+          <button className="btn-approve" disabled={creating || !form.eventName.trim() || !form.matchlistUrl.trim()} onClick={create}>
+            {creating ? '…' : 'Crear link'}
+          </button>
+        </div>
+      )}
+
+      {loading && partners.length === 0 ? (
+        <p className="admin-sub" style={{ padding: 12 }}>Cargando…</p>
+      ) : partners.length === 0 ? (
+        <p className="admin-sub" style={{ padding: 12 }}>Sin partners todavía.</p>
+      ) : (
+        <div className="partner-list">
+          {partners.map((p) => (
+            <div key={p.token} className="partner-row">
+              <div className="partner-head">
+                <div className="partner-main">
+                  <div className="partner-name">{p.eventName}{!p.active && <span className="partner-off">inactivo</span>}</div>
+                  <div className="partner-link" title={linkFor(p.token)}>{linkFor(p.token)}</div>
+                  <div className="admin-user-meta">cupo {p.maxFighters} · {p.joinedCount || 0} atleta(s){p.note ? ` · ${p.note}` : ''}</div>
+                </div>
+                <div className="partner-actions">
+                  <button className="btn-ghost" onClick={() => copyLink(p.token)}>{copied === p.token ? '✓ Copiado' : 'Copiar'}</button>
+                  <button className="btn-ghost" onClick={() => showMembers(p.token)}>{membersFor === p.token ? 'Ocultar' : 'Ver'}</button>
+                  <button className={p.active ? 'btn-block' : 'btn-approve'} onClick={() => toggleActive(p)}>{p.active ? 'Desactivar' : 'Activar'}</button>
+                </div>
+              </div>
+              {membersFor === p.token && (
+                <div className="partner-members">
+                  {members.length === 0 ? (
+                    <span className="admin-sub">Sin atletas aún.</span>
+                  ) : (
+                    members.map((m) => (
+                      <div key={m.email} className="partner-member">
+                        {m.name || m.email} <span className="admin-user-email">{m.email}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AdminPanel({ credential, adminEmail }) {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -126,6 +275,8 @@ export default function AdminPanel({ credential, adminEmail }) {
 
   return (
     <div className="admin-screen">
+      <PartnersSection credential={credential} />
+
       <div className="admin-header">
         <div>
           <h2 className="admin-title">Usuarios</h2>
@@ -165,6 +316,9 @@ export default function AdminPanel({ credential, adminEmail }) {
                     <div className="admin-user-meta">
                       Últ. acceso {fmtDate(u.lastSeen)} · {u.loginCount || 0} logins
                     </div>
+                    {u.source?.type === 'partner' && (
+                      <div className="admin-user-meta admin-source">vía {u.source.eventName || 'partner'}</div>
+                    )}
                   </div>
                 </div>
 

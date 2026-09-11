@@ -117,8 +117,9 @@ export default async function handler(req) {
   const redis = getRedis()
 
   // Gate every op on approval (closes the pre-existing status hole).
+  let me
   try {
-    await requireApprovedUser(redis, payload)
+    me = await requireApprovedUser(redis, payload)
   } catch (err) {
     return json({ error: err.message || 'No autorizado' }, 403)
   }
@@ -137,6 +138,10 @@ export default async function handler(req) {
     if (body.op === 'add') {
       const eventId = body.eventId
       if (!eventId) return json({ error: 'Missing eventId' }, 400)
+      // Partner-scoped accounts may only touch their one allowed event.
+      if (me.scopedEventId && eventId !== me.scopedEventId) {
+        return json({ error: 'Evento no permitido para esta cuenta', code: 'EVENT_NOT_ALLOWED' }, 403)
+      }
       const clean = sanitizeFighter(body.fighter)
       if (!clean) return json({ error: 'Invalid fighter' }, 400)
 
