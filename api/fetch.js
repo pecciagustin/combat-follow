@@ -1,9 +1,12 @@
 export const config = { runtime: 'edge' }
 
 // Detect if a URL can be fetched directly (server-side rendered)
-// AJP/Smoothcomp matchlist pages are SSR and don't need Jina
+// AJP/Smoothcomp matchlist pages are SSR and don't need Jina.
+// The Smoothcomp events index (/en/events/upcoming) is also plain SSR HTML with
+// the full event list inline — a direct fetch with a browser UA returns it 200,
+// no Cloudflare challenge, so it must NOT go through Jina.
 function isDirectFetchable(url) {
-  return url.includes('/schedule/matchlist') || url.includes('bjjcompsystem.com')
+  return url.includes('/schedule/matchlist') || url.includes('bjjcompsystem.com') || url.includes('/events/upcoming')
 }
 
 export default async function handler(req) {
