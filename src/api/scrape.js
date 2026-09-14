@@ -521,6 +521,64 @@ export async function scrapeAllFighters(fighters) {
   return results
 }
 
+// ── Smoothcomp event index (for the event browser) ─────────
+// The public "upcoming events" page embeds the full worldwide list inline as
+// `var events = [...]` (≈1600 events, all countries — the "near me" ordering is
+// only visual). We fetch the raw HTML through the proxy, which serves this URL
+// via a direct fetch (see api/fetch.js `isDirectFetchable`) so the inline
+// <script> survives — no Jina, no Cloudflare challenge. Each entry already
+// carries the event title, its URL (with the correct white-label subdomain) and
+// country/city/date, so the UI can create an event in one click.
+const SMOOTHCOMP_EVENTS_URL = 'https://smoothcomp.com/en/events/upcoming'
+
+// Extract the `var events = [ ... ]` JSON array from the page HTML. Scans with
+// bracket depth (string-aware) so ] inside event titles doesn't end it early.
+function extractEventsArray(html) {
+  const marker = html.match(/var\s+events\s*=\s*\[/)
+  if (!marker) return null
+  const start = marker.index + marker[0].length - 1 // index of the opening '['
+  let depth = 0, inStr = false, quote = '', esc = false
+  for (let i = start; i < html.length; i++) {
+    const ch = html[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === quote) inStr = false
+      continue
+    }
+    if (ch === '"' || ch === "'") { inStr = true; quote = ch; continue }
+    if (ch === '[') depth++
+    else if (ch === ']') { depth--; if (depth === 0) return html.slice(start, i + 1) }
+  }
+  return null
+}
+
+// Fetch and normalize the list of upcoming Smoothcomp events. Returns [] on
+// error so the UI can fall back to manual URL entry.
+export async function fetchSmoothcompEvents() {
+  const proxyUrl = PROXY_BASE + encodeURIComponent(SMOOTHCOMP_EVENTS_URL)
+  const res = await fetchWithTimeout(proxyUrl, {}, 20000)
+  if (!res.ok) throw new Error(`No se pudo cargar la lista de eventos (${res.status})`)
+  const html = await res.text()
+  const raw = extractEventsArray(html)
+  if (!raw) throw new Error('No se pudo leer la lista de eventos de Smoothcomp')
+  let arr
+  try { arr = JSON.parse(raw) } catch { throw new Error('No se pudo leer la lista de eventos de Smoothcomp') }
+  return arr
+    .map((e) => ({
+      id: e.id,
+      title: e.title || '',
+      url: e.url || '',
+      country: e.location_country || '',
+      countryName: e.location_country_human || '',
+      city: e.location_city || '',
+      period: e.eventPeriod || '',
+      startdate: e.startdate || '',
+    }))
+    .filter((e) => e.title && e.url)
+    .sort((a, b) => (a.startdate || '').localeCompare(b.startdate || ''))
+}
+
 // ── Event-wide match list (for the Academias tab) ──────────
 // Fetches every match of an event and returns them normalized, keeping each
 // seat's club so the UI can filter by academy. Works on any Smoothcomp-based

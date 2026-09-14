@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { IconPlus, IconPencil, IconTrash, IconWatch, IconClose, IconScan, IconShare } from './icons'
+import { IconPlus, IconPencil, IconTrash, IconWatch, IconClose, IconScan, IconShare, IconTrophy } from './icons'
+import EventBrowser from './EventBrowser'
 
 const TIER_LABELS = { fighter: 'Fighter', team: 'Team', official: 'Official' }
 
@@ -39,6 +40,7 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
 
   // event management
   const [showNewEvent, setShowNewEvent] = useState(false)
+  const [showBrowser, setShowBrowser] = useState(false)
   const [newEventName, setNewEventName] = useState('')
   const [newEventUrl, setNewEventUrl] = useState('')
   const activeEvent = events.find((e) => e.id === activeEventId) || null
@@ -50,6 +52,13 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
     onCreateEvent(name, url)
     setNewEventName('')
     setNewEventUrl('')
+    setShowNewEvent(false)
+  }
+
+  // Picked from the Smoothcomp event browser: create + activate in one click.
+  function handlePickEvent(name, url) {
+    onCreateEvent(name, url)
+    setShowBrowser(false)
     setShowNewEvent(false)
   }
 
@@ -140,11 +149,18 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
   if (events.length === 0) {
     return (
       <div className="setup-panel">
-        <form className="add-fighter-form event-empty" onSubmit={(e) => { e.preventDefault(); handleCreateEvent() }}>
+        {showBrowser && <EventBrowser onPick={handlePickEvent} onClose={() => setShowBrowser(false)} />}
+        <div className="add-fighter-form event-empty" style={{ marginBottom: 12 }}>
           <h2>Crea tu primer evento</h2>
           <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
-            Un evento agrupa a tus luchadores y usa una sola match list. Después vas a poder agregar luchadores con solo el nombre.
+            Buscá tu evento en Smoothcomp y cargalo con un toque, o pegá la match list a mano más abajo.
           </p>
+          <button type="button" className="btn-primary" style={{ width: '100%', gap: 6 }} onClick={() => setShowBrowser(true)}>
+            <IconTrophy size={15} /> Buscar evento en Smoothcomp
+          </button>
+        </div>
+        <form className="add-fighter-form event-empty" onSubmit={(e) => { e.preventDefault(); handleCreateEvent() }}>
+          <h2 style={{ fontSize: 14 }}>O cargalo manualmente</h2>
           <div className="form-group">
             <label htmlFor="new-event-name">Nombre del evento</label>
             <input
@@ -181,6 +197,7 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
 
   return (
     <div className="setup-panel">
+      {showBrowser && <EventBrowser onPick={handlePickEvent} onClose={() => setShowBrowser(false)} />}
       {/* ── Event bar ── */}
       {scoped ? (
         // Partner-scoped account: the event is fixed, no management controls.
@@ -206,6 +223,9 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
               <option key={ev.id} value={ev.id}>{ev.name}</option>
             ))}
           </select>
+          <button className="btn-ghost" style={{ minHeight: 40, fontSize: 12, whiteSpace: 'nowrap', gap: 5 }} onClick={() => setShowBrowser(true)}>
+            <IconTrophy size={14} /> Buscar
+          </button>
           <button className="btn-ghost" style={{ minHeight: 40, fontSize: 12, whiteSpace: 'nowrap', gap: 5 }} onClick={() => setShowNewEvent((v) => !v)}>
             <IconPlus size={14} /> Evento
           </button>
