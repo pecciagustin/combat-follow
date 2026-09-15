@@ -5,11 +5,12 @@ export const config = { runtime: 'edge' }
 // The Smoothcomp events index (/en/events/upcoming) is also plain SSR HTML with
 // the full event list inline — a direct fetch with a browser UA returns it 200,
 // no Cloudflare challenge, so it must NOT go through Jina.
-// AJP's federation events page (/federation/N/events) renders every event as an
-// SSR div with data-* attributes; Jina would flatten those away, so fetch it
-// directly too (a browser UA returns it 200).
+// AJP's federation events page (/federation/N/events) is behind Cloudflare's JS
+// challenge, which a datacenter IP can't pass — so it does NOT go direct; it
+// goes through Jina in HTML mode (format=html), which renders the challenge and
+// preserves the event divs' data-* attributes.
 function isDirectFetchable(url) {
-  return url.includes('/schedule/matchlist') || url.includes('bjjcompsystem.com') || url.includes('/events/upcoming') || url.includes('/federation/')
+  return url.includes('/schedule/matchlist') || url.includes('bjjcompsystem.com') || url.includes('/events/upcoming')
 }
 
 export default async function handler(req) {
@@ -31,9 +32,13 @@ export default async function handler(req) {
       })
       text = await res.text()
     } else {
-      // Use Jina for JS-rendered pages (brackets)
+      // Use Jina for JS-rendered / Cloudflare-challenged pages.
+      // format=html asks Jina (via x-return-format) for the raw rendered HTML so
+      // markup like data-* attributes survives; default is markdown (brackets).
       const jinaUrl = `https://r.jina.ai/${targetUrl}`
-      const headers = { Accept: format === 'html' ? 'text/html' : 'text/plain' }
+      const headers = format === 'html'
+        ? { Accept: 'text/html', 'x-return-format': 'html' }
+        : { Accept: 'text/plain' }
       const key = process.env.VITE_JINA_API_KEY
       if (key && key !== 'none') headers['Authorization'] = `Bearer ${key}`
       const res = await fetch(jinaUrl, { headers })
