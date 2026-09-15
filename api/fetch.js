@@ -5,8 +5,11 @@ export const config = { runtime: 'edge' }
 // The Smoothcomp events index (/en/events/upcoming) is also plain SSR HTML with
 // the full event list inline — a direct fetch with a browser UA returns it 200,
 // no Cloudflare challenge, so it must NOT go through Jina.
+// AJP's federation events page (/federation/N/events) renders every event as an
+// SSR div with data-* attributes; Jina would flatten those away, so fetch it
+// directly too (a browser UA returns it 200).
 function isDirectFetchable(url) {
-  return url.includes('/schedule/matchlist') || url.includes('bjjcompsystem.com') || url.includes('/events/upcoming')
+  return url.includes('/schedule/matchlist') || url.includes('bjjcompsystem.com') || url.includes('/events/upcoming') || url.includes('/federation/')
 }
 
 export default async function handler(req) {
