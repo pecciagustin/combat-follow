@@ -634,8 +634,10 @@ function byStartdate(a, b) {
 // fetchSmoothcompEvents (so both feeds merge into one list). Scoped to
 // Europe + USA. Returns [] on error so the browser still shows Smoothcomp.
 export async function fetchAjpEvents() {
-  const proxyUrl = PROXY_BASE + encodeURIComponent(AJP_EVENTS_URL)
-  const res = await fetchWithTimeout(proxyUrl, {}, 20000)
+  // AJP sits behind Cloudflare's JS challenge, so the proxy must fetch it via
+  // Jina in HTML mode (format=html) — a direct datacenter fetch gets blocked.
+  const proxyUrl = PROXY_BASE + encodeURIComponent(AJP_EVENTS_URL) + '&format=html'
+  const res = await fetchWithTimeout(proxyUrl, {}, 30000)
   if (!res.ok) throw new Error(`No se pudo cargar la lista de eventos de AJP (${res.status})`)
   const html = await res.text()
   const events = []
