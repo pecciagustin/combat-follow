@@ -4,6 +4,11 @@ import EventBrowser from './EventBrowser'
 
 const TIER_LABELS = { fighter: 'Fighter', team: 'Team', official: 'Official' }
 
+// Buscador de eventos (Smoothcomp/AJP) oculto por ahora — la lectura del listado
+// depende de Jina y la cuenta no tiene saldo. Se carga el evento manualmente por
+// URL. Poner en true para reactivar el buscador cuando Jina tenga tokens.
+const SHOW_EVENT_BROWSER = false
+
 // Shown when the per-event quota is full. Comfort/upsell only.
 function UpsellNotice({ max, tier }) {
   return (
@@ -149,18 +154,25 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
   if (events.length === 0) {
     return (
       <div className="setup-panel">
-        {showBrowser && <EventBrowser onPick={handlePickEvent} onClose={() => setShowBrowser(false)} />}
-        <div className="add-fighter-form event-empty" style={{ marginBottom: 12 }}>
-          <h2>Crea tu primer evento</h2>
-          <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
-            Buscá tu evento en Smoothcomp y cargalo con un toque, o pegá la match list a mano más abajo.
-          </p>
-          <button type="button" className="btn-primary" style={{ width: '100%', gap: 6 }} onClick={() => setShowBrowser(true)}>
-            <IconTrophy size={15} /> Buscar evento en Smoothcomp
-          </button>
-        </div>
+        {SHOW_EVENT_BROWSER && showBrowser && <EventBrowser onPick={handlePickEvent} onClose={() => setShowBrowser(false)} />}
+        {SHOW_EVENT_BROWSER && (
+          <div className="add-fighter-form event-empty" style={{ marginBottom: 12 }}>
+            <h2>Crea tu primer evento</h2>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
+              Buscá tu evento en Smoothcomp y cargalo con un toque, o pegá la match list a mano más abajo.
+            </p>
+            <button type="button" className="btn-primary" style={{ width: '100%', gap: 6 }} onClick={() => setShowBrowser(true)}>
+              <IconTrophy size={15} /> Buscar evento en Smoothcomp
+            </button>
+          </div>
+        )}
         <form className="add-fighter-form event-empty" onSubmit={(e) => { e.preventDefault(); handleCreateEvent() }}>
-          <h2 style={{ fontSize: 14 }}>O cargalo manualmente</h2>
+          <h2 style={{ fontSize: SHOW_EVENT_BROWSER ? 14 : undefined }}>{SHOW_EVENT_BROWSER ? 'O cargalo manualmente' : 'Crea tu primer evento'}</h2>
+          {!SHOW_EVENT_BROWSER && (
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
+              Pegá la URL de la match list del evento (Smoothcomp, AJP o IBJJF).
+            </p>
+          )}
           <div className="form-group">
             <label htmlFor="new-event-name">Nombre del evento</label>
             <input
@@ -197,7 +209,7 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
 
   return (
     <div className="setup-panel">
-      {showBrowser && <EventBrowser onPick={handlePickEvent} onClose={() => setShowBrowser(false)} />}
+      {SHOW_EVENT_BROWSER && showBrowser && <EventBrowser onPick={handlePickEvent} onClose={() => setShowBrowser(false)} />}
       {/* ── Event bar ── */}
       {scoped ? (
         // Partner-scoped account: the event is fixed, no management controls.
@@ -223,9 +235,11 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
               <option key={ev.id} value={ev.id}>{ev.name}</option>
             ))}
           </select>
-          <button className="btn-ghost" style={{ minHeight: 40, fontSize: 12, whiteSpace: 'nowrap', gap: 5 }} onClick={() => setShowBrowser(true)}>
-            <IconTrophy size={14} /> Buscar
-          </button>
+          {SHOW_EVENT_BROWSER && (
+            <button className="btn-ghost" style={{ minHeight: 40, fontSize: 12, whiteSpace: 'nowrap', gap: 5 }} onClick={() => setShowBrowser(true)}>
+              <IconTrophy size={14} /> Buscar
+            </button>
+          )}
           <button className="btn-ghost" style={{ minHeight: 40, fontSize: 12, whiteSpace: 'nowrap', gap: 5 }} onClick={() => setShowNewEvent((v) => !v)}>
             <IconPlus size={14} /> Evento
           </button>
