@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { IconClose } from './icons'
-import { fetchSmoothcompEvents } from '../api/scrape'
+import { fetchAllEvents } from '../api/scrape'
 
 // Session cache: the index is ~1MB, so we only fetch it once per session and
 // reuse it every time the browser is reopened.
@@ -29,7 +29,7 @@ export default function EventBrowser({ onPick, onClose }) {
   useEffect(() => {
     if (eventsCache) return
     let cancelled = false
-    fetchSmoothcompEvents()
+    fetchAllEvents()
       .then((list) => { if (!cancelled) { eventsCache = list; setEvents(list) } })
       .catch((e) => { if (!cancelled) setError(e.message || 'No se pudo cargar la lista de eventos') })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -37,13 +37,14 @@ export default function EventBrowser({ onPick, onClose }) {
   }, [])
 
   // Countries present in the data, alphabetical, each with its event count.
+  // Keyed by ISO code so a country coming from both feeds isn't duplicated.
   const countries = useMemo(() => {
     const counts = new Map()
     for (const e of events) {
-      if (!e.countryName) continue
-      const prev = counts.get(e.countryName)
+      if (!e.country) continue
+      const prev = counts.get(e.country)
       if (prev) prev.count += 1
-      else counts.set(e.countryName, { name: e.countryName, code: e.country, count: 1 })
+      else counts.set(e.country, { code: e.country, name: e.countryName || e.country, count: 1 })
     }
     return [...counts.values()].sort((a, b) => a.name.localeCompare(b.name))
   }, [events])
@@ -51,7 +52,7 @@ export default function EventBrowser({ onPick, onClose }) {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return events.filter((e) => {
-      if (country && e.countryName !== country) return false
+      if (country && e.country !== country) return false
       if (q && !e.title.toLowerCase().includes(q)) return false
       return true
     })
@@ -66,7 +67,7 @@ export default function EventBrowser({ onPick, onClose }) {
     <div className="qr-overlay" onClick={onClose}>
       <div className="qr-modal notif-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560, width: '100%' }}>
         <div className="qr-header">
-          <div className="qr-title">Eventos en Smoothcomp</div>
+          <div className="qr-title">Buscar evento</div>
           <button className="qr-close" onClick={onClose} aria-label="Cerrar"><IconClose size={16} /></button>
         </div>
 
@@ -91,7 +92,7 @@ export default function EventBrowser({ onPick, onClose }) {
               >
                 <option value="">Todos los países ({events.length})</option>
                 {countries.map((c) => (
-                  <option key={c.name} value={c.name}>
+                  <option key={c.code} value={c.code}>
                     {flagEmoji(c.code)} {c.name} ({c.count})
                   </option>
                 ))}

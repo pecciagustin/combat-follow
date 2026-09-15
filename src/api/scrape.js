@@ -531,6 +531,31 @@ export async function scrapeAllFighters(fighters) {
 // country/city/date, so the UI can create an event in one click.
 const SMOOTHCOMP_EVENTS_URL = 'https://smoothcomp.com/en/events/upcoming'
 
+// AJP (ajptour.com) is a white-label Smoothcomp instance whose events are NOT in
+// Smoothcomp's public index. Its federation page renders every event as a
+// <div class="… eventItem" data-…> block (data-name/date/url/country) — plain
+// SSR HTML, so it goes through the proxy's direct-fetch path (see api/fetch.js).
+const AJP_EVENTS_URL = 'https://ajptour.com/en/federation/1/events'
+
+// The event browser is scoped to Europe + USA. ISO alpha-2 codes of every
+// European country (incl. UK and transcontinental ones that count as Europe)
+// plus US. Both the Smoothcomp and AJP feeds are filtered against this.
+const ALLOWED_COUNTRIES = new Set([
+  'US', // USA
+  'AD', 'AL', 'AT', 'BA', 'BE', 'BG', 'BY', 'CH', 'CY', 'CZ', 'DE', 'DK', 'EE',
+  'ES', 'FI', 'FO', 'FR', 'GB', 'GE', 'GI', 'GR', 'HR', 'HU', 'IE', 'IS', 'IT',
+  'LI', 'LT', 'LU', 'LV', 'MC', 'MD', 'ME', 'MK', 'MT', 'NL', 'NO', 'PL', 'PT',
+  'RO', 'RS', 'RU', 'SE', 'SI', 'SK', 'SM', 'TR', 'UA', 'VA', 'XK',
+])
+
+// Human country name (in Spanish) from an ISO alpha-2 code. Used to unify the
+// display across the two feeds, since we now filter by code, not name.
+function countryNameFromCode(code) {
+  if (!code) return ''
+  try { return new Intl.DisplayNames(['es'], { type: 'region' }).of(code.toUpperCase()) || code }
+  catch { return code }
+}
+
 // Extract the `var events = [ ... ]` JSON array from the page HTML. Scans with
 // bracket depth (string-aware) so ] inside event titles doesn't end it early.
 function extractEventsArray(html) {
@@ -570,13 +595,95 @@ export async function fetchSmoothcompEvents() {
       title: e.title || '',
       url: e.url || '',
       country: e.location_country || '',
-      countryName: e.location_country_human || '',
+      countryName: countryNameFromCode(e.location_country) || e.location_country_human || '',
       city: e.location_city || '',
       period: e.eventPeriod || '',
       startdate: e.startdate || '',
     }))
-    .filter((e) => e.title && e.url)
-    .sort((a, b) => (a.startdate || '').localeCompare(b.startdate || ''))
+    .filter((e) => e.title && e.url && ALLOWED_COUNTRIES.has((e.country || '').toUpperCase()))
+    .sort(byStartdate)
+}
+
+// Turn AJP's date label into a sortable YYYY-MM-DD. Labels come as "September 18",
+// a range "October 17 - 18", or with an explicit leading year "2027 September 11".
+// When no year is given the page lists upcoming events, so assume the current
+// year and roll to next year when the month has already passed. '' if unparsable.
+const AJP_MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
+function ajpDateToSortKey(dateStr) {
+  const str = (dateStr || '').trim()
+  const m = str.match(/([a-z]+)\s+(\d{1,2})/i)
+  if (!m) return ''
+  const month = AJP_MONTHS.indexOf(m[1].toLowerCase())
+  if (month < 0) return ''
+  const day = parseInt(m[2], 10)
+  const explicitYear = str.match(/^(\d{4})\b/)
+  const now = new Date()
+  let year = explicitYear ? parseInt(explicitYear[1], 10) : now.getFullYear()
+  if (!explicitYear && month < now.getMonth()) year += 1
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+// Chronological comparator: real dates ascending, undated events pushed last.
+function byStartdate(a, b) {
+  const sa = a.startdate || '~' // '~' > any digit, so blanks sort to the end
+  const sb = b.startdate || '~'
+  return sa.localeCompare(sb)
+}
+
+// Fetch and normalize AJP's upcoming events into the same shape as
+// fetchSmoothcompEvents (so both feeds merge into one list). Scoped to
+// Europe + USA. Returns [] on error so the browser still shows Smoothcomp.
+export async function fetchAjpEvents() {
+  const proxyUrl = PROXY_BASE + encodeURIComponent(AJP_EVENTS_URL)
+  const res = await fetchWithTimeout(proxyUrl, {}, 20000)
+  if (!res.ok) throw new Error(`No se pudo cargar la lista de eventos de AJP (${res.status})`)
+  const html = await res.text()
+  const events = []
+  const seen = new Set()
+  // Each event is a div carrying its data-* attributes (attribute order varies).
+  const blockRe = /class="[^"]*eventItem[^"]*"[\s\S]*?data-country="[^"]*"/g
+  let m
+  while ((m = blockRe.exec(html)) !== null) {
+    const block = m[0]
+    const attr = (name) => {
+      const a = block.match(new RegExp(`data-${name}="([^"]*)"`))
+      return a ? a[1] : ''
+    }
+    const url = attr('url')
+    const country = attr('country').toUpperCase()
+    if (!url || seen.has(url)) continue
+    if (!ALLOWED_COUNTRIES.has(country)) continue
+    seen.add(url)
+    const period = decodeHtmlEntities(attr('date'))
+    events.push({
+      id: `ajp-${attr('id') || url}`,
+      title: decodeHtmlEntities(attr('name')),
+      url,
+      country,
+      countryName: countryNameFromCode(country),
+      city: '',
+      period,
+      startdate: ajpDateToSortKey(period),
+    })
+  }
+  return events.filter((e) => e.title && e.url)
+}
+
+// Merge the Smoothcomp and AJP feeds into one Europe+USA event list for the
+// browser. Uses allSettled so a failure of one feed doesn't sink the other.
+export async function fetchAllEvents() {
+  const [sc, ajp] = await Promise.allSettled([fetchSmoothcompEvents(), fetchAjpEvents()])
+  const scList = sc.status === 'fulfilled' ? sc.value : []
+  const ajpList = ajp.status === 'fulfilled' ? ajp.value : []
+  if (sc.status === 'rejected' && ajp.status === 'rejected') {
+    throw new Error('No se pudo cargar la lista de eventos')
+  }
+  const byUrl = new Map()
+  for (const e of [...scList, ...ajpList]) {
+    const key = e.url.replace(/\/+$/, '')
+    if (!byUrl.has(key)) byUrl.set(key, e)
+  }
+  return [...byUrl.values()].sort(byStartdate)
 }
 
 // ── Event-wide match list (for the Academias tab) ──────────
