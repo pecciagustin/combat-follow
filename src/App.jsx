@@ -771,7 +771,7 @@ export default function App() {
       <nav className="tabbar">
         <button className={`tab${tab === 'panel' ? ' active' : ''}`} onClick={() => setTab('panel')}>
           <IconPanel />
-          Panel
+          Luchas
         </button>
         <button className={`tab${tab === 'academias' ? ' active' : ''}`} onClick={() => setTab('academias')}>
           <IconAcademia />
