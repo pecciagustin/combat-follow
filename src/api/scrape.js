@@ -601,23 +601,33 @@ export async function fetchSmoothcompEvents() {
       startdate: e.startdate || '',
     }))
     .filter((e) => e.title && e.url && ALLOWED_COUNTRIES.has((e.country || '').toUpperCase()))
-    .sort((a, b) => (a.startdate || '').localeCompare(b.startdate || ''))
+    .sort(byStartdate)
 }
 
-// Turn AJP's "September 18" (month + day, no year) into a sortable YYYY-MM-DD.
-// The federation page lists upcoming events, so we assume the current year and
-// roll to next year when the month has already passed. Returns '' if unparsable.
+// Turn AJP's date label into a sortable YYYY-MM-DD. Labels come as "September 18",
+// a range "October 17 - 18", or with an explicit leading year "2027 September 11".
+// When no year is given the page lists upcoming events, so assume the current
+// year and roll to next year when the month has already passed. '' if unparsable.
 const AJP_MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
 function ajpDateToSortKey(dateStr) {
-  const m = (dateStr || '').trim().match(/([a-z]+)\s+(\d{1,2})/i)
+  const str = (dateStr || '').trim()
+  const m = str.match(/([a-z]+)\s+(\d{1,2})/i)
   if (!m) return ''
   const month = AJP_MONTHS.indexOf(m[1].toLowerCase())
   if (month < 0) return ''
   const day = parseInt(m[2], 10)
+  const explicitYear = str.match(/^(\d{4})\b/)
   const now = new Date()
-  let year = now.getFullYear()
-  if (month < now.getMonth()) year += 1
+  let year = explicitYear ? parseInt(explicitYear[1], 10) : now.getFullYear()
+  if (!explicitYear && month < now.getMonth()) year += 1
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+// Chronological comparator: real dates ascending, undated events pushed last.
+function byStartdate(a, b) {
+  const sa = a.startdate || '~' // '~' > any digit, so blanks sort to the end
+  const sb = b.startdate || '~'
+  return sa.localeCompare(sb)
 }
 
 // Fetch and normalize AJP's upcoming events into the same shape as
@@ -673,7 +683,7 @@ export async function fetchAllEvents() {
     const key = e.url.replace(/\/+$/, '')
     if (!byUrl.has(key)) byUrl.set(key, e)
   }
-  return [...byUrl.values()].sort((a, b) => (a.startdate || '').localeCompare(b.startdate || ''))
+  return [...byUrl.values()].sort(byStartdate)
 }
 
 // ── Event-wide match list (for the Academias tab) ──────────
