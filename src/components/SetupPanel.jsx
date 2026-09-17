@@ -155,6 +155,18 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
     return (
       <div className="setup-panel">
         {SHOW_EVENT_BROWSER && showBrowser && <EventBrowser onPick={handlePickEvent} onClose={() => setShowBrowser(false)} />}
+        {/* Camino rápido en el teléfono: si ya lo cargaste en la web, escaneá el
+            QR y el evento + luchadores se crean solos (importDecoded en App). */}
+        <div className="add-fighter-form event-empty" style={{ marginBottom: 12 }}>
+          <h2>¿Ya lo cargaste en la web?</h2>
+          <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
+            Escaneá el QR que aparece en tu computadora y el evento se carga solo.
+          </p>
+          <button type="button" className="btn-primary" style={{ width: '100%', gap: 6 }} onClick={onShowScanner}>
+            <IconScan size={15} /> Escanear QR
+          </button>
+        </div>
+        <div className="event-empty-divider">o cargalo manualmente</div>
         {SHOW_EVENT_BROWSER && (
           <div className="add-fighter-form event-empty" style={{ marginBottom: 12 }}>
             <h2>Crea tu primer evento</h2>

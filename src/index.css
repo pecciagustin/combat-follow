@@ -1108,6 +1108,25 @@ button:active {
   margin-top: 4px;
 }
 
+/* Separator between the QR-scan shortcut and the manual event form. */
+.event-empty-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.event-empty-divider::before,
+.event-empty-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
 /* ─── My tournaments modal ────────────────────────────── */
 .tournament-row {
   display: flex;
