@@ -11,8 +11,8 @@
   --text: #F3F5EC;
   --text-secondary: #8D9480;
   --muted-2: #666C59;
-  --accent: #C6F736;
-  --lime-ink: #131608;
+  --accent: #753C52;
+  --lime-ink: #F3F5EC;
   --live: #FF5C4D;
   --changed: #F5B027;
   --finished: #666C59;
@@ -434,8 +434,8 @@ button:active {
 }
 
 .fighter-card.live {
-  border-color: rgba(198, 247, 54, 0.45);
-  box-shadow: 0 0 0 1px rgba(198, 247, 54, 0.12), 0 8px 30px -18px rgba(198, 247, 54, 0.5);
+  border-color: rgba(117, 60, 82, 0.45);
+  box-shadow: 0 0 0 1px rgba(117, 60, 82, 0.12), 0 8px 30px -18px rgba(117, 60, 82, 0.5);
 }
 
 .card-top {
@@ -475,7 +475,7 @@ button:active {
 }
 
 .badge-upcoming { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
-.badge-live     { background: rgba(198, 247, 54, 0.15); color: var(--accent); border: 1px solid rgba(198, 247, 54, 0.3); }
+.badge-live     { background: rgba(117, 60, 82, 0.15); color: var(--accent); border: 1px solid rgba(117, 60, 82, 0.3); }
 .badge-finished { background: transparent; color: var(--muted-2); border: 1px solid var(--border); }
 .badge-changed  { background: rgba(245, 176, 39, 0.15); color: var(--changed); border: 1px solid rgba(245, 176, 39, 0.3); }
 .badge-notfound { background: var(--input-bg); color: var(--text-secondary); border: 1px solid var(--border); }
@@ -1439,7 +1439,7 @@ button:active {
   min-width: 56px;
   border-radius: 18px;
   margin-top: -16px;
-  box-shadow: 0 10px 26px -10px rgba(198, 247, 54, 0.6);
+  box-shadow: 0 10px 26px -10px rgba(117, 60, 82, 0.6);
   flex-shrink: 0;
 }
 
@@ -1610,7 +1610,7 @@ button:active {
 }
 .login-hero-block .login-logo-img {
   margin-bottom: 26px;
-  filter: drop-shadow(0 20px 50px rgba(198, 247, 54, 0.35));
+  filter: drop-shadow(0 20px 50px rgba(117, 60, 82, 0.35));
 }
 .login-tagline {
   font-size: 15px;
