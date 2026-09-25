@@ -24,19 +24,25 @@ function extractEventBase(url) {
 // ── Smoothcomp JSON API (bypasses Cloudflare) ─────────
 async function getSmoothcompMatData(eventBaseUrl) {
   const categories = await fetchJson(`${eventBaseUrl}/schedule/new/matcategories.json`)
-  const categoryId = categories?.[0]?.id
-  if (!categoryId) throw new Error('No categories')
-  const mats = await fetchJson(`${eventBaseUrl}/schedule/new/mats.json/${categoryId}`)
-  if (!mats?.length) throw new Error('No mats')
-  const results = await Promise.all(
-    mats.map(async (mat) => {
-      try {
-        const matches = await fetchJson(`${eventBaseUrl}/schedule/new/mat/${mat.id}/matches.json`)
-        return { mat, matches: matches || [] }
-      } catch { return null }
-    })
-  )
-  return results.filter(Boolean)
+  if (!categories?.length) throw new Error('No categories')
+  const all = []
+  await Promise.all(categories.map(async (cat) => {
+    try {
+      const mats = await fetchJson(`${eventBaseUrl}/schedule/new/mats.json/${cat.id}`)
+      if (!mats?.length) return
+      const results = await Promise.all(
+        mats.map(async (mat) => {
+          try {
+            const matches = await fetchJson(`${eventBaseUrl}/schedule/new/mat/${mat.id}/matches.json`)
+            return { mat, matches: matches || [] }
+          } catch { return null }
+        })
+      )
+      all.push(...results.filter(Boolean))
+    } catch { /* skip unavailable category */ }
+  }))
+  if (!all.length) throw new Error('No mats')
+  return all
 }
 
 function timing(match) {
@@ -119,7 +125,7 @@ function parseBjjTiming(html, fighterName, mat, fightNum, byCoord) {
 
 async function getFighterTiming(fighter, smoothcompCache) {
   const url = fighter.matchlistUrl || fighter.bracketUrl || ''
-  if (url.match(/smoothcomp\.com/) && !url.includes('bjjcompsystem.com')) {
+  if ((url.match(/smoothcomp\.com/) || url.match(/ajptour\.com/)) && !url.includes('bjjcompsystem.com')) {
     const base = extractEventBase(url)
     const matData = base ? smoothcompCache[base] : null
     if (!matData) throw new Error('sin datos del evento (JSON)')
@@ -184,7 +190,7 @@ export default async function handler(req) {
     const bases = [...new Set(
       fighters
         .map((f) => f.matchlistUrl || f.bracketUrl || '')
-        .filter((u) => u.match(/smoothcomp\.com/) && !u.includes('bjjcompsystem.com'))
+        .filter((u) => (u.match(/smoothcomp\.com/) || u.match(/ajptour\.com/)) && !u.includes('bjjcompsystem.com'))
         .map(extractEventBase)
         .filter(Boolean)
     )]
