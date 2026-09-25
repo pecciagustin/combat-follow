@@ -248,25 +248,29 @@ async function fetchJson(url) {
 }
 
 async function fetchSmooothcompEventData(eventBaseUrl) {
-  // Get mat category ID, then mat IDs, then all matches per mat
   const categories = await fetchJson(`${eventBaseUrl}/schedule/new/matcategories.json`)
-  const categoryId = categories?.[0]?.id
-  if (!categoryId) throw new Error('No mat categories found')
+  if (!categories?.length) throw new Error('No mat categories found')
 
-  const mats = await fetchJson(`${eventBaseUrl}/schedule/new/mats.json/${categoryId}`)
-  if (!mats?.length) throw new Error('No mats found')
-
-  const matMatches = await Promise.all(
-    mats.map(async (mat) => {
-      try {
-        const matches = await fetchJson(`${eventBaseUrl}/schedule/new/mat/${mat.id}/matches.json`)
-        return { mat, matches }
-      } catch {
-        return null
-      }
-    })
-  )
-  return matMatches.filter(Boolean)
+  const allMatMatches = []
+  await Promise.all(categories.map(async (cat) => {
+    try {
+      const mats = await fetchJson(`${eventBaseUrl}/schedule/new/mats.json/${cat.id}`)
+      if (!mats?.length) return
+      const matResults = await Promise.all(
+        mats.map(async (mat) => {
+          try {
+            const matches = await fetchJson(`${eventBaseUrl}/schedule/new/mat/${mat.id}/matches.json`)
+            return { mat, matches }
+          } catch {
+            return null
+          }
+        })
+      )
+      allMatMatches.push(...matResults.filter(Boolean))
+    } catch { /* skip unavailable category */ }
+  }))
+  if (!allMatMatches.length) throw new Error('No mats found')
+  return allMatMatches
 }
 
 function findFightByCoordInSmooothcompData(matData, mat, fightNum) {
