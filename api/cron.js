@@ -1,6 +1,34 @@
 import { Redis } from '@upstash/redis'
+import webpush from 'web-push'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'nodejs' }
+
+const PUSH_SUBS_KEY = 'cf:push-subs'
+const FIGHTERS_PREFIX = 'cf:fighters:'
+
+function initWebPush() {
+  const pub = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY
+  const priv = process.env.VAPID_PRIVATE_KEY
+  if (!pub || !priv) return false
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:noreply@combatfollow.com',
+    pub,
+    priv,
+  )
+  return true
+}
+
+async function sendPushToUser(redis, subscriptions, title, body) {
+  await Promise.allSettled(subscriptions.map(async ({ endpoint, sub }) => {
+    try {
+      await webpush.sendNotification(sub, JSON.stringify({ title, body, tag: 'fight-alert' }))
+    } catch (err) {
+      if (err.statusCode === 410 || err.statusCode === 404) {
+        await redis.hdel(PUSH_SUBS_KEY, endpoint)
+      }
+    }
+  }))
+}
 
 // ── Fetch helpers ─────────────────────────────────────
 function fetchWithTimeout(url, opts = {}, ms = 15000) {
@@ -224,7 +252,79 @@ export default async function handler(req) {
     }
 
     await redis.set('cf:state', JSON.stringify(newState))
-    return new Response(JSON.stringify({ ok: true, checked: fighters.length, changes: log }), {
+
+    // ── Per-user push notifications ──────────────────────
+    const pushLog = []
+    const pushEnabled = initWebPush()
+    if (pushEnabled) {
+      const allSubs = await redis.hgetall(PUSH_SUBS_KEY)
+      if (allSubs && Object.keys(allSubs).length > 0) {
+        const byEmail = {}
+        for (const [endpoint, raw] of Object.entries(allSubs)) {
+          const record = typeof raw === 'string' ? JSON.parse(raw) : raw
+          if (!byEmail[record.email]) byEmail[record.email] = []
+          byEmail[record.email].push({ endpoint, sub: record.subscription })
+        }
+
+        const pushState = await redis.get('cf:push-state')
+        const pState = pushState ? (typeof pushState === 'string' ? JSON.parse(pushState) : pushState) : {}
+        const newPState = { ...pState }
+
+        for (const [email, subs] of Object.entries(byEmail)) {
+          const rawFighters = await redis.hgetall(`${FIGHTERS_PREFIX}${email}`)
+          if (!rawFighters) continue
+
+          // Load the user's tournaments to resolve matchlistUrl per eventId
+          const rawTournaments = await redis.hgetall(`cf:tournaments:${email}`)
+          const eventUrls = {}
+          if (rawTournaments) {
+            for (const raw of Object.values(rawTournaments)) {
+              const t = typeof raw === 'string' ? JSON.parse(raw) : raw
+              if (t?.id && t?.matchlistUrl) eventUrls[t.id] = t.matchlistUrl
+            }
+          }
+
+          const userFighters = Object.values(rawFighters)
+            .map((r) => typeof r === 'string' ? JSON.parse(r) : r)
+            .filter((f) => f.active !== false)
+            .map((f) => ({ ...f, matchlistUrl: eventUrls[f.eventId] || '' }))
+            .filter((f) => f.matchlistUrl)
+
+          // Ensure smoothcomp data is cached for these fighters' events
+          const userBases = [...new Set(
+            userFighters
+              .map((f) => f.matchlistUrl)
+              .filter((u) => (u.match(/smoothcomp\.com/) || u.match(/ajptour\.com/)) && !u.includes('bjjcompsystem.com'))
+              .map(extractEventBase)
+              .filter((b) => b && !smoothcompCache[b])
+          )]
+          await Promise.all(userBases.map(async (b) => {
+            try { smoothcompCache[b] = await getSmoothcompMatData(b) }
+            catch { smoothcompCache[b] = null }
+          }))
+
+          for (const fighter of userFighters) {
+            try {
+              const data = await getFighterTiming(fighter, smoothcompCache)
+              if (!data || !data.startMs || data.isFinished) continue
+              const alertKey = `${email}:${fighter.id}-${data.ref || data.startMs}`
+              if (pState[`alerted:${alertKey}`]) continue
+              const mins = Math.round((data.startMs - now) / 60000)
+              if (mins >= 0 && mins < 10) {
+                const hm = new Date(data.startMs).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+                const msg = `Combate en ${mins} min — a las ${hm}${data.ref ? ` (combate ${data.ref})` : ''}`
+                await sendPushToUser(redis, subs, fighter.name, msg)
+                newPState[`alerted:${alertKey}`] = true
+                pushLog.push(`push:${email}:${fighter.name}`)
+              }
+            } catch { /* skip fighter on error */ }
+          }
+        }
+        await redis.set('cf:push-state', JSON.stringify(newPState))
+      }
+    }
+
+    return new Response(JSON.stringify({ ok: true, checked: fighters.length, changes: log, push: pushLog }), {
       headers: { 'Content-Type': 'application/json' },
     })
   } catch (err) {

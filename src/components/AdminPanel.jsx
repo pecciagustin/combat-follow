@@ -273,9 +273,32 @@ export default function AdminPanel({ credential, adminEmail }) {
 
   const pending = users.filter((u) => u.status === 'pending').length
 
+  const [pushTestMsg, setPushTestMsg] = useState('')
+  async function sendPushTest() {
+    setPushTestMsg('Enviando...')
+    try {
+      const res = await fetch('/api/push-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential }),
+      })
+      const data = await res.json()
+      if (data.error) setPushTestMsg(`Error: ${data.error}`)
+      else setPushTestMsg(`Enviadas: ${data.sent}, fallidas: ${data.failed}`)
+    } catch (e) { setPushTestMsg(`Error: ${e.message}`) }
+    setTimeout(() => setPushTestMsg(''), 4000)
+  }
+
   return (
     <div className="admin-screen">
       <PartnersSection credential={credential} />
+
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+        <button className="btn-ghost" onClick={sendPushTest} style={{ fontSize: 13 }}>
+          🔔 Enviar push de prueba
+        </button>
+        {pushTestMsg && <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 8 }}>{pushTestMsg}</span>}
+      </div>
 
       <div className="admin-header">
         <div>
