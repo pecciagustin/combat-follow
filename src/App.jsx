@@ -483,10 +483,14 @@ export default function App() {
   }
 
   async function addFighter(fighter) {
-    if (!activeEventId) return  // no active event → nothing to attach to
+    if (!activeEventId) return { ok: false }
     const res = await addFighterToEvent(activeEventId, fighter)
-    if (!res.ok && res.code === 'LIMIT_REACHED') {
-      alert(`Alcanzaste el límite de tu plan (${res.max} por evento). Elimina un seguimiento para agregar otro.`)
+    if (!res.ok) {
+      if (res.code === 'LIMIT_REACHED') {
+        alert(`Alcanzaste el límite de tu plan (${res.max} por evento). Elimina un seguimiento para agregar otro.`)
+      } else {
+        alert(res.error || 'No se pudo guardar el seguimiento. Intentá de nuevo.')
+      }
     }
     return res
   }

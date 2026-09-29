@@ -97,25 +97,29 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
   const [editFightNum, setEditFightNum] = useState('')
   const [editTrackMode, setEditTrackMode] = useState(null)
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
     const trimName = name.trim()
     if (!trimName) return
-    onAdd({ name: trimName, discipline: discipline || null })
-    setName('')
-    setDiscipline('')
+    const res = await onAdd({ name: trimName, discipline: discipline || null })
+    if (res?.ok) {
+      setName('')
+      setDiscipline('')
+    }
   }
 
-  function handleFightSubmit(e) {
+  async function handleFightSubmit(e) {
     e.preventDefault()
     const label = fightLabel.trim()
     const mat = fightMat.trim()
     const num = fightNum.trim()
     if (!label || !mat || !num) return
-    onAdd({ trackMode: 'fight', name: label, mat, fightNum: num })
-    setFightLabel('')
-    setFightMat('')
-    setFightNum('')
+    const res = await onAdd({ trackMode: 'fight', name: label, mat, fightNum: num })
+    if (res?.ok) {
+      setFightLabel('')
+      setFightMat('')
+      setFightNum('')
+    }
   }
 
   function startEdit(f) {
