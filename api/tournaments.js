@@ -1,4 +1,5 @@
 import { verifyGoogleToken, getRedis, requireApprovedUser } from '../lib/serverAuth.js'
+import { invalidatePushTargets } from '../lib/cronSchedule.js'
 
 export const config = { runtime: 'edge' }
 
@@ -77,7 +78,10 @@ export default async function handler(req) {
         if (me.scopedEventId && t.id !== me.scopedEventId) continue
         entries[t.id] = JSON.stringify(t)
       }
-      if (Object.keys(entries).length > 0) await redis.hset(key, entries)
+      if (Object.keys(entries).length > 0) {
+        await redis.hset(key, entries)
+        await invalidatePushTargets(redis)
+      }
       return json({ ok: true, count: Object.keys(entries).length })
     }
 

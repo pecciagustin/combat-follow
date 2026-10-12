@@ -1,4 +1,5 @@
 import { verifyGoogleToken, requireApprovedUser, getRedis } from '../lib/serverAuth.js'
+import { invalidatePushTargets } from '../lib/cronSchedule.js'
 
 export const config = { runtime: 'edge' }
 
@@ -25,6 +26,7 @@ export default async function handler(req) {
     if (op === 'remove') {
       if (!endpoint) throw new Error('Missing endpoint')
       await redis.hdel(PUSH_SUBS_KEY, endpoint)
+      await invalidatePushTargets(redis)
       return new Response(JSON.stringify({ ok: true, removed: true }), { headers: CORS })
     }
 
@@ -32,6 +34,7 @@ export default async function handler(req) {
     await redis.hset(PUSH_SUBS_KEY, {
       [subscription.endpoint]: JSON.stringify({ email, subscription, createdAt: Date.now() }),
     })
+    await invalidatePushTargets(redis)
     return new Response(JSON.stringify({ ok: true, registered: true }), { headers: CORS })
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), { status: 400, headers: CORS })

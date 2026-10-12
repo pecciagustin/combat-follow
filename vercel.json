@@ -1,1 +1,6 @@
-{}
+{
+  "functions": {
+    "api/cron.js": { "maxDuration": 30 },
+    "api/push-test.js": { "maxDuration": 15 }
+  }
+}
