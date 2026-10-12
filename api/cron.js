@@ -1,27 +1,35 @@
 import { Redis } from '@upstash/redis'
-import webpush from 'web-push'
+import {
+  DORMANT_KEY, TARGETS_KEY, TARGETS_TTL_SEC, ALERT_TTL_SEC,
+  parseJson, computeDormantUntil, loadDormant,
+} from '../lib/cronSchedule.js'
 
 export const config = { runtime: 'nodejs' }
 
 const PUSH_SUBS_KEY = 'cf:push-subs'
 const FIGHTERS_PREFIX = 'cf:fighters:'
+const TOURNAMENTS_PREFIX = 'cf:tournaments:'
 
-function initWebPush() {
-  const pub = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY
-  const priv = process.env.VAPID_PRIVATE_KEY
-  if (!pub || !priv) return false
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:noreply@combatfollow.com',
-    pub,
-    priv,
-  )
-  return true
+let webpushPromise = null
+// web-push is only loaded when there is actually something to send.
+async function getWebPush() {
+  if (!webpushPromise) {
+    webpushPromise = import('web-push').then((m) => {
+      const webpush = m.default || m
+      const pub = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY
+      const priv = process.env.VAPID_PRIVATE_KEY
+      if (!pub || !priv) return null
+      webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:noreply@combatfollow.com', pub, priv)
+      return webpush
+    })
+  }
+  return webpushPromise
 }
 
-async function sendPushToUser(redis, subscriptions, title, body) {
+async function sendPushToUser(redis, webpush, subscriptions, title, body) {
   await Promise.allSettled(subscriptions.map(async ({ endpoint, sub }) => {
     try {
-      await webpush.sendNotification(sub, JSON.stringify({ title, body, tag: 'fight-alert' }))
+      await webpush.sendNotification(sub, JSON.stringify({ title, body, tag: 'fight-alert' }), { timeout: 5000 })
     } catch (err) {
       if (err.statusCode === 410 || err.statusCode === 404) {
         await redis.hdel(PUSH_SUBS_KEY, endpoint)
@@ -31,7 +39,7 @@ async function sendPushToUser(redis, subscriptions, title, body) {
 }
 
 // ── Fetch helpers ─────────────────────────────────────
-function fetchWithTimeout(url, opts = {}, ms = 15000) {
+function fetchWithTimeout(url, opts = {}, ms = 8000) {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), ms)
   return fetch(url, { cache: 'no-store', signal: controller.signal, ...opts })
@@ -151,7 +159,7 @@ function parseBjjTiming(html, fighterName, mat, fightNum, byCoord) {
   return { ref: next.ref, startMs: next.startMs, isFinished: next.isFinished, isRunning: false }
 }
 
-async function getFighterTiming(fighter, smoothcompCache) {
+async function getFighterTiming(fighter, smoothcompCache, htmlCache) {
   const url = fighter.matchlistUrl || fighter.bracketUrl || ''
   if ((url.match(/smoothcomp\.com/) || url.match(/ajptour\.com/)) && !url.includes('bjjcompsystem.com')) {
     const base = extractEventBase(url)
@@ -162,9 +170,15 @@ async function getFighterTiming(fighter, smoothcompCache) {
       : findFighterTiming(matData, fighter.name, fighter.discipline)
   }
   if (url.includes('bjjcompsystem.com')) {
-    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/html' } }, 12000)
-    if (!res.ok) throw new Error(`Fetch ${res.status}`)
-    const html = await res.text()
+    // One GET per URL per run, even if several fighters share the page.
+    if (!htmlCache.has(url)) {
+      htmlCache.set(url, fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/html' } }, 8000)
+        .then((res) => {
+          if (!res.ok) throw new Error(`Fetch ${res.status}`)
+          return res.text()
+        }))
+    }
+    const html = await htmlCache.get(url)
     return parseBjjTiming(html, fighter.name, fighter.mat, fighter.fightNum, fighter.trackMode === 'fight')
   }
   throw new Error('fuente no soportada en el cron')
@@ -189,6 +203,59 @@ async function sendEmail(emailConfig, fighterName, changes) {
   })
 }
 
+const isSmoothUrl = (u) => (/smoothcomp\.com/.test(u) || /ajptour\.com/.test(u)) && !u.includes('bjjcompsystem.com')
+const parse = parseJson
+
+// Every match of an event, flattened to timings (for the dormancy decision).
+function eventTimings(matData) {
+  const out = []
+  for (const { matches } of matData) for (const m of matches) out.push(timing(m))
+  return out
+}
+
+// Recipients: one entry per user with their active fighters resolved to an
+// event URL. Cached in Redis (invalidated by the endpoints that change it).
+async function loadPushTargets(redis) {
+  const cached = parse(await redis.get(TARGETS_KEY))
+  if (cached) return cached
+
+  const allSubs = (await redis.hgetall(PUSH_SUBS_KEY)) || {}
+  const byEmail = {}
+  for (const [endpoint, raw] of Object.entries(allSubs)) {
+    const record = parse(raw)
+    if (!record?.email) continue
+    ;(byEmail[record.email] ||= []).push({ endpoint, sub: record.subscription })
+  }
+  const emails = Object.keys(byEmail)
+  const targets = []
+  if (emails.length) {
+    const pipe = redis.pipeline()
+    for (const email of emails) {
+      pipe.hgetall(`${FIGHTERS_PREFIX}${email}`)
+      pipe.hgetall(`${TOURNAMENTS_PREFIX}${email}`)
+    }
+    const res = await pipe.exec()
+    emails.forEach((email, i) => {
+      const rawFighters = res[i * 2]
+      const rawTournaments = res[i * 2 + 1]
+      if (!rawFighters) return
+      const eventUrls = {}
+      for (const raw of Object.values(rawTournaments || {})) {
+        const t = parse(raw)
+        if (t?.id && t?.matchlistUrl) eventUrls[t.id] = t.matchlistUrl
+      }
+      const fighters = Object.values(rawFighters)
+        .map(parse)
+        .filter((f) => f && f.active !== false)
+        .map((f) => ({ ...f, matchlistUrl: eventUrls[f.eventId] || '' }))
+        .filter((f) => f.matchlistUrl)
+      if (fighters.length) targets.push({ email, subs: byEmail[email], fighters })
+    })
+  }
+  await redis.set(TARGETS_KEY, JSON.stringify(targets), { ex: TARGETS_TTL_SEC })
+  return targets
+}
+
 export default async function handler(req) {
   try {
     // Optional protection: if CRON_SECRET is set, require ?key= or Bearer token.
@@ -204,127 +271,102 @@ export default async function handler(req) {
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
     })
-
-    const raw = await redis.get('cf:config')
-    if (!raw) return new Response('No config', { status: 200 })
-
-    const { fighters, emailConfig } = typeof raw === 'string' ? JSON.parse(raw) : raw
-    const prevState = await redis.get('cf:state')
-    const state = prevState ? (typeof prevState === 'string' ? JSON.parse(prevState) : prevState) : {}
-    const newState = { ...state }
-    const log = []
-
-    // Pre-fetch smoothcomp event data once per event via JSON API.
-    const bases = [...new Set(
-      fighters
-        .map((f) => f.matchlistUrl || f.bracketUrl || '')
-        .filter((u) => (u.match(/smoothcomp\.com/) || u.match(/ajptour\.com/)) && !u.includes('bjjcompsystem.com'))
-        .map(extractEventBase)
-        .filter(Boolean)
-    )]
-    const smoothcompCache = {}
-    await Promise.all(bases.map(async (b) => {
-      try { smoothcompCache[b] = await getSmoothcompMatData(b) }
-      catch { smoothcompCache[b] = null }
-    }))
-
-    const results = await Promise.all(fighters.map(async (fighter) => {
-      try { return { fighter, data: await getFighterTiming(fighter, smoothcompCache) } }
-      catch (e) { return { fighter, data: null, error: e.message } }
-    }))
-
     const now = Date.now()
-    for (const { fighter, data, error } of results) {
-      if (error || !data) { log.push(`${fighter.name}: ${error || 'sin combate'}`); continue }
-      const key = fighter.id
-      const alertKey = `${key}-${data.ref || data.startMs}`
+    const pushConfigured = !!((process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY) && process.env.VAPID_PRIVATE_KEY)
 
-      if (data.startMs && !data.isFinished && !state[`alerted:${alertKey}`]) {
-        const mins = Math.round((data.startMs - now) / 60000)
-        if (mins >= 0 && mins < 10) {
-          const hm = new Date(data.startMs).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
-          await sendEmail(emailConfig, fighter.name, `⚡ Combate en ${mins} min — a las ${hm}${data.ref ? ` (combate ${data.ref})` : ''}`)
-          newState[`alerted:${alertKey}`] = true
-          log.push(`${fighter.name}: alerta ${mins} min`)
-        }
+    const [rawConfig, dormant, targets] = await Promise.all([
+      redis.get('cf:config'),
+      loadDormant(redis, now),
+      pushConfigured ? loadPushTargets(redis) : [],
+    ])
+    const config = parse(rawConfig) || {}
+    const legacyFighters = Array.isArray(config.fighters) ? config.fighters : []
+    const emailConfig = config.emailConfig
+
+    // Flatten everything to check into tasks.
+    const tasks = []
+    for (const f of legacyFighters) {
+      tasks.push({ owner: 'legacy', fighter: f, url: f.matchlistUrl || f.bracketUrl || '' })
+    }
+    for (const t of targets) {
+      for (const f of t.fighters) tasks.push({ owner: t.email, fighter: f, url: f.matchlistUrl, target: t })
+    }
+    for (const t of tasks) {
+      if (isSmoothUrl(t.url)) {
+        t.base = extractEventBase(t.url)
+        t.dormKey = t.base ? `evt:${t.base}` : null
+      } else if (t.url.includes('bjjcompsystem.com')) {
+        t.dormKey = `bjj:${t.owner}:${t.fighter.id}`
       }
-      newState[key] = { ref: data.ref, startMs: data.startMs, updatedAt: now }
     }
 
-    await redis.set('cf:state', JSON.stringify(newState))
+    // Early exit: drop everything whose event/fight is still far away.
+    let live = tasks.filter((t) => !(t.dormKey && dormant[t.dormKey] > now))
+    const checked = tasks.length
+    if (!live.length) {
+      return new Response(JSON.stringify({ ok: true, idle: true, checked, changes: [], push: [] }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
 
-    // ── Per-user push notifications ──────────────────────
+    const dormUpdates = {}
+    const smoothcompCache = {}
+    const htmlCache = new Map()
+    const bases = [...new Set(live.map((t) => t.base).filter(Boolean))]
+    await Promise.all(bases.map(async (b) => {
+      try {
+        smoothcompCache[b] = await getSmoothcompMatData(b)
+        const until = computeDormantUntil(eventTimings(smoothcompCache[b]), now)
+        if (until) dormUpdates[`evt:${b}`] = until
+      } catch { smoothcompCache[b] = null }
+    }))
+    // Events found to be far from starting: nothing to alert this run.
+    live = live.filter((t) => !(t.dormKey && dormUpdates[t.dormKey]))
+
+    const log = []
     const pushLog = []
-    const pushEnabled = initWebPush()
-    if (pushEnabled) {
-      const allSubs = await redis.hgetall(PUSH_SUBS_KEY)
-      if (allSubs && Object.keys(allSubs).length > 0) {
-        const byEmail = {}
-        for (const [endpoint, raw] of Object.entries(allSubs)) {
-          const record = typeof raw === 'string' ? JSON.parse(raw) : raw
-          if (!byEmail[record.email]) byEmail[record.email] = []
-          byEmail[record.email].push({ endpoint, sub: record.subscription })
+    let webpush = null
+
+    await Promise.all(live.map(async (task) => {
+      const { fighter, owner } = task
+      try {
+        const data = await getFighterTiming(fighter, smoothcompCache, htmlCache)
+        if (!data) { if (owner === 'legacy') log.push(`${fighter.name}: sin combate`); return }
+        if (!data.startMs || data.isFinished) return
+        const mins = Math.round((data.startMs - now) / 60000)
+        if (task.dormKey?.startsWith('bjj:')) {
+          const until = computeDormantUntil([data], now)
+          if (until) { dormUpdates[task.dormKey] = until; return }
         }
+        if (mins < 0 || mins >= 10) return
 
-        const pushState = await redis.get('cf:push-state')
-        const pState = pushState ? (typeof pushState === 'string' ? JSON.parse(pushState) : pushState) : {}
-        const newPState = { ...pState }
-
-        for (const [email, subs] of Object.entries(byEmail)) {
-          const rawFighters = await redis.hgetall(`${FIGHTERS_PREFIX}${email}`)
-          if (!rawFighters) continue
-
-          // Load the user's tournaments to resolve matchlistUrl per eventId
-          const rawTournaments = await redis.hgetall(`cf:tournaments:${email}`)
-          const eventUrls = {}
-          if (rawTournaments) {
-            for (const raw of Object.values(rawTournaments)) {
-              const t = typeof raw === 'string' ? JSON.parse(raw) : raw
-              if (t?.id && t?.matchlistUrl) eventUrls[t.id] = t.matchlistUrl
-            }
+        const alertKey = `cf:alerted:${owner}:${fighter.id}-${data.ref || data.startMs}`
+        const claimed = await redis.set(alertKey, 1, { nx: true, ex: ALERT_TTL_SEC })
+        if (!claimed) return
+        const hm = new Date(data.startMs).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+        const refTxt = data.ref ? ` (combate ${data.ref})` : ''
+        try {
+          if (owner === 'legacy') {
+            await sendEmail(emailConfig, fighter.name, `⚡ Combate en ${mins} min — a las ${hm}${refTxt}`)
+            log.push(`${fighter.name}: alerta ${mins} min`)
+          } else {
+            webpush ||= await getWebPush()
+            if (!webpush) return
+            await sendPushToUser(redis, webpush, task.target.subs, fighter.name, `Combate en ${mins} min — a las ${hm}${refTxt}`)
+            pushLog.push(`push:${owner}:${fighter.name}`)
           }
-
-          const userFighters = Object.values(rawFighters)
-            .map((r) => typeof r === 'string' ? JSON.parse(r) : r)
-            .filter((f) => f.active !== false)
-            .map((f) => ({ ...f, matchlistUrl: eventUrls[f.eventId] || '' }))
-            .filter((f) => f.matchlistUrl)
-
-          // Ensure smoothcomp data is cached for these fighters' events
-          const userBases = [...new Set(
-            userFighters
-              .map((f) => f.matchlistUrl)
-              .filter((u) => (u.match(/smoothcomp\.com/) || u.match(/ajptour\.com/)) && !u.includes('bjjcompsystem.com'))
-              .map(extractEventBase)
-              .filter((b) => b && !smoothcompCache[b])
-          )]
-          await Promise.all(userBases.map(async (b) => {
-            try { smoothcompCache[b] = await getSmoothcompMatData(b) }
-            catch { smoothcompCache[b] = null }
-          }))
-
-          for (const fighter of userFighters) {
-            try {
-              const data = await getFighterTiming(fighter, smoothcompCache)
-              if (!data || !data.startMs || data.isFinished) continue
-              const alertKey = `${email}:${fighter.id}-${data.ref || data.startMs}`
-              if (pState[`alerted:${alertKey}`]) continue
-              const mins = Math.round((data.startMs - now) / 60000)
-              if (mins >= 0 && mins < 10) {
-                const hm = new Date(data.startMs).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
-                const msg = `Combate en ${mins} min — a las ${hm}${data.ref ? ` (combate ${data.ref})` : ''}`
-                await sendPushToUser(redis, subs, fighter.name, msg)
-                newPState[`alerted:${alertKey}`] = true
-                pushLog.push(`push:${email}:${fighter.name}`)
-              }
-            } catch { /* skip fighter on error */ }
-          }
+        } catch (err) {
+          await redis.del(alertKey) // let the next run retry
+          throw err
         }
-        await redis.set('cf:push-state', JSON.stringify(newPState))
+      } catch (e) {
+        if (owner === 'legacy') log.push(`${fighter.name}: ${e.message}`)
       }
-    }
+    }))
 
-    return new Response(JSON.stringify({ ok: true, checked: fighters.length, changes: log, push: pushLog }), {
+    if (Object.keys(dormUpdates).length) await redis.hset(DORMANT_KEY, dormUpdates)
+
+    return new Response(JSON.stringify({ ok: true, checked, changes: log, push: pushLog }), {
       headers: { 'Content-Type': 'application/json' },
     })
   } catch (err) {
