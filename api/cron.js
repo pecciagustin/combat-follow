@@ -1,55 +1,29 @@
 import { Redis } from '@upstash/redis'
 import {
-  DORMANT_KEY, TARGETS_KEY, TARGETS_TTL_SEC, ALERT_TTL_SEC,
+  DORMANT_KEY, ALERT_TTL_SEC,
   parseJson, computeDormantUntil, loadDormant,
 } from '../lib/cronSchedule.js'
 
 export const config = { runtime: 'nodejs' }
 
-const PUSH_SUBS_KEY = 'cf:push-subs'
-const FIGHTERS_PREFIX = 'cf:fighters:'
-const TOURNAMENTS_PREFIX = 'cf:tournaments:'
-
-let webpushPromise = null
-// web-push is only loaded when there is actually something to send.
-async function getWebPush() {
-  if (!webpushPromise) {
-    webpushPromise = import('web-push').then((m) => {
-      const webpush = m.default || m
-      const pub = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY
-      const priv = process.env.VAPID_PRIVATE_KEY
-      if (!pub || !priv) return null
-      webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:noreply@combatfollow.com', pub, priv)
-      return webpush
-    })
-  }
-  return webpushPromise
-}
-
-async function sendPushToUser(redis, webpush, subscriptions, title, body) {
-  await Promise.allSettled(subscriptions.map(async ({ endpoint, sub }) => {
-    try {
-      await webpush.sendNotification(sub, JSON.stringify({ title, body, tag: 'fight-alert' }), { timeout: 5000 })
-    } catch (err) {
-      if (err.statusCode === 410 || err.statusCode === 404) {
-        await redis.hdel(PUSH_SUBS_KEY, endpoint)
-      }
-    }
-  }))
-}
+const EVENT_DEADLINE_MS = 20000 // max wall time spent on a single event
+const FAIL_BACKOFF_MS = 5 * 60000 // skip an event this long after it fails/times out
 
 // ── Fetch helpers ─────────────────────────────────────
-function fetchWithTimeout(url, opts = {}, ms = 8000) {
+function fetchWithTimeout(url, opts = {}, ms = 8000, signal) {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), ms)
+  signal?.addEventListener('abort', () => controller.abort(), { once: true })
+  // Timer stays armed until the body is read, so a stalled body can't hang the run.
   return fetch(url, { cache: 'no-store', signal: controller.signal, ...opts })
+    .then(async (res) => { res._text = await res.text(); return res })
     .finally(() => clearTimeout(id))
 }
 
-async function fetchJson(url) {
-  const res = await fetchWithTimeout(url)
+async function fetchJson(url, signal) {
+  const res = await fetchWithTimeout(url, {}, 8000, signal)
   if (!res.ok) throw new Error(`${res.status}`)
-  return res.json()
+  return JSON.parse(res._text)
 }
 
 function extractEventBase(url) {
@@ -58,18 +32,18 @@ function extractEventBase(url) {
 }
 
 // ── Smoothcomp JSON API (bypasses Cloudflare) ─────────
-async function getSmoothcompMatData(eventBaseUrl) {
-  const categories = await fetchJson(`${eventBaseUrl}/schedule/new/matcategories.json`)
+async function getSmoothcompMatData(eventBaseUrl, signal) {
+  const categories = await fetchJson(`${eventBaseUrl}/schedule/new/matcategories.json`, signal)
   if (!categories?.length) throw new Error('No categories')
   const all = []
   await Promise.all(categories.map(async (cat) => {
     try {
-      const mats = await fetchJson(`${eventBaseUrl}/schedule/new/mats.json/${cat.id}`)
+      const mats = await fetchJson(`${eventBaseUrl}/schedule/new/mats.json/${cat.id}`, signal)
       if (!mats?.length) return
       const results = await Promise.all(
         mats.map(async (mat) => {
           try {
-            const matches = await fetchJson(`${eventBaseUrl}/schedule/new/mat/${mat.id}/matches.json`)
+            const matches = await fetchJson(`${eventBaseUrl}/schedule/new/mat/${mat.id}/matches.json`, signal)
             return { mat, matches: matches || [] }
           } catch { return null }
         })
@@ -175,7 +149,7 @@ async function getFighterTiming(fighter, smoothcompCache, htmlCache) {
       htmlCache.set(url, fetchWithTimeout(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/html' } }, 8000)
         .then((res) => {
           if (!res.ok) throw new Error(`Fetch ${res.status}`)
-          return res.text()
+          return res._text
         }))
     }
     const html = await htmlCache.get(url)
@@ -204,56 +178,12 @@ async function sendEmail(emailConfig, fighterName, changes) {
 }
 
 const isSmoothUrl = (u) => (/smoothcomp\.com/.test(u) || /ajptour\.com/.test(u)) && !u.includes('bjjcompsystem.com')
-const parse = parseJson
 
 // Every match of an event, flattened to timings (for the dormancy decision).
 function eventTimings(matData) {
   const out = []
   for (const { matches } of matData) for (const m of matches) out.push(timing(m))
   return out
-}
-
-// Recipients: one entry per user with their active fighters resolved to an
-// event URL. Cached in Redis (invalidated by the endpoints that change it).
-async function loadPushTargets(redis) {
-  const cached = parse(await redis.get(TARGETS_KEY))
-  if (cached) return cached
-
-  const allSubs = (await redis.hgetall(PUSH_SUBS_KEY)) || {}
-  const byEmail = {}
-  for (const [endpoint, raw] of Object.entries(allSubs)) {
-    const record = parse(raw)
-    if (!record?.email) continue
-    ;(byEmail[record.email] ||= []).push({ endpoint, sub: record.subscription })
-  }
-  const emails = Object.keys(byEmail)
-  const targets = []
-  if (emails.length) {
-    const pipe = redis.pipeline()
-    for (const email of emails) {
-      pipe.hgetall(`${FIGHTERS_PREFIX}${email}`)
-      pipe.hgetall(`${TOURNAMENTS_PREFIX}${email}`)
-    }
-    const res = await pipe.exec()
-    emails.forEach((email, i) => {
-      const rawFighters = res[i * 2]
-      const rawTournaments = res[i * 2 + 1]
-      if (!rawFighters) return
-      const eventUrls = {}
-      for (const raw of Object.values(rawTournaments || {})) {
-        const t = parse(raw)
-        if (t?.id && t?.matchlistUrl) eventUrls[t.id] = t.matchlistUrl
-      }
-      const fighters = Object.values(rawFighters)
-        .map(parse)
-        .filter((f) => f && f.active !== false)
-        .map((f) => ({ ...f, matchlistUrl: eventUrls[f.eventId] || '' }))
-        .filter((f) => f.matchlistUrl)
-      if (fighters.length) targets.push({ email, subs: byEmail[email], fighters })
-    })
-  }
-  await redis.set(TARGETS_KEY, JSON.stringify(targets), { ex: TARGETS_TTL_SEC })
-  return targets
 }
 
 export default async function handler(req) {
@@ -272,103 +202,95 @@ export default async function handler(req) {
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
     })
     const now = Date.now()
-    const pushConfigured = !!((process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY) && process.env.VAPID_PRIVATE_KEY)
 
-    const [rawConfig, dormant, targets] = await Promise.all([
-      redis.get('cf:config'),
-      loadDormant(redis, now),
-      pushConfigured ? loadPushTargets(redis) : [],
-    ])
-    const config = parse(rawConfig) || {}
-    const legacyFighters = Array.isArray(config.fighters) ? config.fighters : []
+    const [rawConfig, dormant] = await Promise.all([redis.get('cf:config'), loadDormant(redis, now)])
+    const config = parseJson(rawConfig) || {}
+    const fighters = Array.isArray(config.fighters) ? config.fighters : []
     const emailConfig = config.emailConfig
+    const json = (body) => new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })
+    if (!fighters.length) return json({ ok: true, idle: true, checked: 0, changes: [] })
 
-    // Flatten everything to check into tasks.
-    const tasks = []
-    for (const f of legacyFighters) {
-      tasks.push({ owner: 'legacy', fighter: f, url: f.matchlistUrl || f.bracketUrl || '' })
-    }
-    for (const t of targets) {
-      for (const f of t.fighters) tasks.push({ owner: t.email, fighter: f, url: f.matchlistUrl, target: t })
-    }
-    for (const t of tasks) {
-      if (isSmoothUrl(t.url)) {
-        t.base = extractEventBase(t.url)
-        t.dormKey = t.base ? `evt:${t.base}` : null
-      } else if (t.url.includes('bjjcompsystem.com')) {
-        t.dormKey = `bjj:${t.owner}:${t.fighter.id}`
+    const tasks = fighters.map((fighter) => {
+      const url = fighter.matchlistUrl || fighter.bracketUrl || ''
+      const task = { fighter, url }
+      if (isSmoothUrl(url)) {
+        task.base = extractEventBase(url)
+        task.dormKey = task.base ? `evt:${task.base}` : null
+      } else if (url.includes('bjjcompsystem.com')) {
+        task.dormKey = `bjj:${fighter.id}`
       }
-    }
+      return task
+    })
 
-    // Early exit: drop everything whose event/fight is still far away.
-    let live = tasks.filter((t) => !(t.dormKey && dormant[t.dormKey] > now))
+    // Early exit: drop everything whose event/fight is still far away (or failing).
+    const live = tasks.filter((t) => !(t.dormKey && dormant[t.dormKey] > now))
     const checked = tasks.length
-    if (!live.length) {
-      return new Response(JSON.stringify({ ok: true, idle: true, checked, changes: [], push: [] }), {
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
+    if (!live.length) return json({ ok: true, idle: true, checked, changes: [] })
 
     const dormUpdates = {}
-    const smoothcompCache = {}
-    const htmlCache = new Map()
-    const bases = [...new Set(live.map((t) => t.base).filter(Boolean))]
-    await Promise.all(bases.map(async (b) => {
-      try {
-        smoothcompCache[b] = await getSmoothcompMatData(b)
-        const until = computeDormantUntil(eventTimings(smoothcompCache[b]), now)
-        if (until) dormUpdates[`evt:${b}`] = until
-      } catch { smoothcompCache[b] = null }
-    }))
-    // Events found to be far from starting: nothing to alert this run.
-    live = live.filter((t) => !(t.dormKey && dormUpdates[t.dormKey]))
-
     const log = []
-    const pushLog = []
-    let webpush = null
+    const htmlCache = new Map()
+    const byBase = new Map()
+    const others = []
+    for (const t of live) {
+      if (t.base) {
+        if (!byBase.has(t.base)) byBase.set(t.base, [])
+        byBase.get(t.base).push(t)
+      } else others.push(t)
+    }
 
-    await Promise.all(live.map(async (task) => {
-      const { fighter, owner } = task
+    async function processTask(task, smoothcompCache) {
+      const { fighter } = task
       try {
         const data = await getFighterTiming(fighter, smoothcompCache, htmlCache)
-        if (!data) { if (owner === 'legacy') log.push(`${fighter.name}: sin combate`); return }
+        if (!data) { log.push(`${fighter.name}: sin combate`); return }
         if (!data.startMs || data.isFinished) return
-        const mins = Math.round((data.startMs - now) / 60000)
         if (task.dormKey?.startsWith('bjj:')) {
           const until = computeDormantUntil([data], now)
           if (until) { dormUpdates[task.dormKey] = until; return }
         }
+        const mins = Math.round((data.startMs - now) / 60000)
         if (mins < 0 || mins >= 10) return
 
-        const alertKey = `cf:alerted:${owner}:${fighter.id}-${data.ref || data.startMs}`
+        const alertKey = `cf:alerted:legacy:${fighter.id}-${data.ref || data.startMs}`
         const claimed = await redis.set(alertKey, 1, { nx: true, ex: ALERT_TTL_SEC })
         if (!claimed) return
         const hm = new Date(data.startMs).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
-        const refTxt = data.ref ? ` (combate ${data.ref})` : ''
         try {
-          if (owner === 'legacy') {
-            await sendEmail(emailConfig, fighter.name, `⚡ Combate en ${mins} min — a las ${hm}${refTxt}`)
-            log.push(`${fighter.name}: alerta ${mins} min`)
-          } else {
-            webpush ||= await getWebPush()
-            if (!webpush) return
-            await sendPushToUser(redis, webpush, task.target.subs, fighter.name, `Combate en ${mins} min — a las ${hm}${refTxt}`)
-            pushLog.push(`push:${owner}:${fighter.name}`)
-          }
+          await sendEmail(emailConfig, fighter.name, `⚡ Combate en ${mins} min — a las ${hm}${data.ref ? ` (combate ${data.ref})` : ''}`)
+          log.push(`${fighter.name}: alerta ${mins} min`)
         } catch (err) {
           await redis.del(alertKey) // let the next run retry
           throw err
         }
       } catch (e) {
-        if (owner === 'legacy') log.push(`${fighter.name}: ${e.message}`)
+        log.push(`${fighter.name}: ${e.message}`)
       }
-    }))
+    }
+
+    // Each event is fetched and processed independently with its own deadline,
+    // so one slow/blocked event can't starve the others.
+    await Promise.all([
+      ...[...byBase.entries()].map(async ([base, eventTasks]) => {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), EVENT_DEADLINE_MS)
+        let matData
+        try {
+          matData = await getSmoothcompMatData(base, controller.signal)
+        } catch (e) {
+          dormUpdates[`evt:${base}`] = now + FAIL_BACKOFF_MS
+          log.push(`evento ${base}: ${controller.signal.aborted ? 'timeout' : e.message}`)
+          return
+        } finally { clearTimeout(timer) }
+        const until = computeDormantUntil(eventTimings(matData), now)
+        if (until) { dormUpdates[`evt:${base}`] = until; return }
+        await Promise.all(eventTasks.map((t) => processTask(t, { [base]: matData })))
+      }),
+      ...others.map((t) => processTask(t, {})),
+    ])
 
     if (Object.keys(dormUpdates).length) await redis.hset(DORMANT_KEY, dormUpdates)
-
-    return new Response(JSON.stringify({ ok: true, checked, changes: log, push: pushLog }), {
-      headers: { 'Content-Type': 'application/json' },
-    })
+    return json({ ok: true, checked, changes: log })
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500, headers: { 'Content-Type': 'application/json' },

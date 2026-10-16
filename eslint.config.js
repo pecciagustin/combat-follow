@@ -19,12 +19,6 @@ export default defineConfig([
     },
   },
   {
-    files: ['src/sw.js'],
-    languageOptions: {
-      globals: globals.serviceworker,
-    },
-  },
-  {
     files: ['api/**/*.js', 'lib/**/*.js'],
     languageOptions: {
       globals: { process: 'readonly', crypto: 'readonly' },
