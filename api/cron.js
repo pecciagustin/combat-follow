@@ -186,7 +186,14 @@ function eventTimings(matData) {
   return out
 }
 
-export default async function handler(req) {
+// Node-runtime functions only send a returned Response from a named HTTP-method
+// export; a default export returning a Response is ignored by Vercel, which left
+// every invocation hanging until the timeout.
+export async function GET(req) {
+  return run(req)
+}
+
+async function run(req) {
   try {
     // Optional protection: if CRON_SECRET is set, require ?key= or Bearer token.
     const secret = process.env.CRON_SECRET
