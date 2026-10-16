@@ -807,8 +807,6 @@ export default function App() {
           emailConfig={emailConfig}
           onSave={saveEmailConfig}
           onClose={() => setShowNotifications(false)}
-          credential={credential}
-          isAdmin={isAdmin}
         />
       )}
       {showMyTournaments && (

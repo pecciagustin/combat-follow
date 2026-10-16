@@ -6,7 +6,6 @@ import {
   ADMIN_EMAIL,
   TIER_DEFAULTS,
 } from '../lib/serverAuth.js'
-import { invalidatePushTargets } from '../lib/cronSchedule.js'
 
 export const config = { runtime: 'edge' }
 
@@ -160,14 +159,12 @@ export default async function handler(req) {
         addedAt: Date.now(),
       }
       await redis.hset(key, { [fighter.id]: JSON.stringify(fighter) })
-      await invalidatePushTargets(redis)
       return json({ ok: true, fighter: { ...fighter, active: true }, used: used + 1, max })
     }
 
     if (body.op === 'remove') {
       if (!body.id) return json({ error: 'Missing id' }, 400)
       await redis.hdel(key, String(body.id))
-      await invalidatePushTargets(redis)
       return json({ ok: true })
     }
 
@@ -207,7 +204,6 @@ export default async function handler(req) {
         for (const ev of seededEvents) marks[ev] = 1
         await redis.hset(migratedKey(email), marks)
       }
-      await invalidatePushTargets(redis)
       return json({ ok: true, seeded: Object.keys(entries).length })
     }
 
