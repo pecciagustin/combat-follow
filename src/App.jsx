@@ -10,10 +10,7 @@ import QRScanner from './components/QRScanner'
 import LoginScreen from './components/LoginScreen'
 import StatusScreen from './components/StatusScreen'
 import AdminPanel from './components/AdminPanel'
-import SuccessOverlay from './components/SuccessOverlay'
-import NotificationsModal from './components/NotificationsModal'
 import MyTournamentsModal from './components/MyTournamentsModal'
-import { IconGear } from './components/icons'
 import { saveTournaments } from './api/tournaments'
 import { listFighters, addFighterRemote, removeFighterRemote, migrateFighters } from './api/fighters'
 import { useAuth } from './auth/useAuth'
@@ -22,7 +19,6 @@ import { savePartnerToken } from './auth/googleAuth'
 // v2: match list moved to the event level; fighters no longer carry a URL.
 // Bumping the keys starts fresh and ignores legacy data (kept intact, reversible).
 const STORAGE_KEY = 'combat-follow-fighters-v2'
-const EMAIL_CONFIG_KEY = 'combat-follow-email'
 const EVENTS_KEY = 'combat-follow-events-v2'
 const ACTIVE_EVENT_KEY = 'combat-follow-active-event-v2'
 
@@ -34,14 +30,6 @@ function decodeImportParam(params) {
   return null
 }
 
-function loadEmailConfig() {
-  try {
-    const raw = localStorage.getItem(EMAIL_CONFIG_KEY)
-    return raw ? JSON.parse(raw) : { serviceId: '', templateId: '', publicKey: '', toEmail: '' }
-  } catch {
-    return { serviceId: '', templateId: '', publicKey: '', toEmail: '' }
-  }
-}
 const INTERVALS = [
   { label: '1 min', value: 60 },
   { label: '2 min', value: 120 },
@@ -171,17 +159,10 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [intervalSec, setIntervalSec] = useState(120)
-  const [emailConfig, setEmailConfig] = useState(loadEmailConfig)
   const [showQR, setShowQR] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
-  const [successInfo, setSuccessInfo] = useState(null)
-  const [showNotifications, setShowNotifications] = useState(false)
   const [showMyTournaments, setShowMyTournaments] = useState(false)
 
-  function saveEmailConfig(cfg) {
-    setEmailConfig(cfg)
-    localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(cfg))
-  }
   const intervalRef = useRef(null)
   const isLoadingRef = useRef(false) // ref-based lock — never stale in closures
   const reconciledRef = useRef(false) // one-time roster reconcile with the server
@@ -314,7 +295,7 @@ export default function App() {
         return next
       })
 
-      // Mark urgent (red) when <10 min — visual only, email handled by server cron
+      // Mark urgent (red) when <10 min
       results.forEach(({ id, data }) => {
         if (!data?.time || data.status === 'notfound') return
         const mins = minutesUntil(data.time)
@@ -368,7 +349,6 @@ export default function App() {
   const importDecoded = useCallback(async (decoded) => {
     if (!decoded) return 0
     const importedFighters = Array.isArray(decoded) ? decoded : decoded.fighters || []
-    const importedEmail = !Array.isArray(decoded) ? decoded.email : null
     const eventName = !Array.isArray(decoded) ? (decoded.eventName || '').trim() : ''
     // Event-level match list URL. New payloads carry `eventUrl`; legacy payloads
     // only had per-fighter URLs, so fall back to the first fighter's url.
@@ -431,10 +411,6 @@ export default function App() {
       alert('Algunos seguimientos no se importaron: alcanzaste el límite de tu plan para este evento.')
     }
 
-    if (importedEmail?.serviceId) {
-      setEmailConfig(importedEmail)
-      localStorage.setItem(EMAIL_CONFIG_KEY, JSON.stringify(importedEmail))
-    }
     return added
   }, [activeEventId, events, fighters, addFighterToEvent])
 
@@ -579,28 +555,6 @@ export default function App() {
     refresh()
   }
 
-  async function activateServerMonitoring() {
-    if (!trackedFighters.length) return alert('No hay luchadores en este evento.')
-    if (!emailConfig.serviceId) return alert('Configura las notificaciones de email primero.')
-    const ev = events.find((e) => e.id === activeEventId)
-    const eventUrl = ev?.matchlistUrl || ''
-    if (!eventUrl) return alert('Este evento no tiene una match list configurada.')
-    // Server cron / api/watch read `url` per fighter — inject the event's URL.
-    const payloadFighters = trackedFighters.map((f) => ({ ...f, url: eventUrl, matchlistUrl: eventUrl, bracketUrl: eventUrl }))
-    try {
-      const res = await fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential, fighters: payloadFighters, emailConfig }),
-      })
-      const data = await res.json()
-      if (data.ok) setSuccessInfo({ eventName: ev?.name || '', count: data.count })
-      else alert('Error al activar: ' + data.error)
-    } catch (e) {
-      alert('Error de conexión: ' + e.message)
-    }
-  }
-
   const activeEvent = events.find((e) => e.id === activeEventId) || null
   // Scoped accounts only ever see their one partner event across the whole UI.
   const visibleEvents = isScoped ? events.filter((e) => e.id === scopedEventId) : events
@@ -655,9 +609,7 @@ export default function App() {
         onRefresh={handleManualRefresh}
         isLoading={isLoading}
         user={user}
-        isAdmin={isAdmin}
         onSignOut={signOut}
-        onOpenNotifications={() => setShowNotifications(true)}
         onOpenMyTournaments={() => setShowMyTournaments(true)}
       />
 
@@ -716,12 +668,6 @@ export default function App() {
               ))}
             </select>
             <div className="spacer" />
-            {isAdmin && trackedFighters.length > 0 && (
-              <button className="btn-ghost" style={{ fontSize: 12, minHeight: 32, gap: 6 }} onClick={activateServerMonitoring}>
-                <IconGear size={14} />
-                Servidor
-              </button>
-            )}
           </div>
 
           {showSlowNotice && (
@@ -790,24 +736,10 @@ export default function App() {
       </nav>
 
       {showQR && (
-        <QRModal fighters={trackedFighters} eventName={activeEvent?.name} eventUrl={activeEvent?.matchlistUrl} emailConfig={emailConfig} onClose={() => setShowQR(false)} />
+        <QRModal fighters={trackedFighters} eventName={activeEvent?.name} eventUrl={activeEvent?.matchlistUrl} onClose={() => setShowQR(false)} />
       )}
       {showScanner && (
         <QRScanner onResult={handleScanResult} onClose={() => setShowScanner(false)} />
-      )}
-      {successInfo && (
-        <SuccessOverlay
-          eventName={successInfo.eventName}
-          count={successInfo.count}
-          onClose={() => setSuccessInfo(null)}
-        />
-      )}
-      {showNotifications && (
-        <NotificationsModal
-          emailConfig={emailConfig}
-          onSave={saveEmailConfig}
-          onClose={() => setShowNotifications(false)}
-        />
       )}
       {showMyTournaments && (
         <MyTournamentsModal

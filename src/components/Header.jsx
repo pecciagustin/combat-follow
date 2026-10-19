@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconRefresh, IconSpinner, IconBell, IconTrophy } from './icons'
+import { IconRefresh, IconSpinner, IconTrophy } from './icons'
 import logoCf from '../assets/logo-cf.png'
 
-export default function Header({ isMonitoring, lastUpdated, onRefresh, isLoading, user, isAdmin, onSignOut, onOpenNotifications, onOpenMyTournaments }) {
+export default function Header({ isMonitoring, lastUpdated, onRefresh, isLoading, user, onSignOut, onOpenMyTournaments }) {
   const timeStr = lastUpdated
     ? lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : null
@@ -71,15 +71,6 @@ export default function Header({ isMonitoring, lastUpdated, onRefresh, isLoading
                   <IconTrophy size={15} />
                   Mis torneos
                 </button>
-                {isAdmin && (
-                  <button
-                    className="btn-ghost user-menu-item"
-                    onClick={() => { setMenuOpen(false); onOpenNotifications?.() }}
-                  >
-                    <IconBell size={15} />
-                    Notificaciones
-                  </button>
-                )}
                 <button
                   className="btn-ghost user-signout"
                   onClick={() => { setMenuOpen(false); onSignOut() }}
