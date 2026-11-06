@@ -46,6 +46,7 @@ function sanitizeFighter(f) {
   } else {
     out.name = String(f.name || '').slice(0, 120)
     if (f.discipline) out.discipline = f.discipline
+    if (f.division) out.division = String(f.division).slice(0, 300)
   }
   if (f.note) out.note = String(f.note).slice(0, 500)
   return out.name ? out : null
@@ -53,7 +54,7 @@ function sanitizeFighter(f) {
 
 // Dedupe identity for migration: same event + same tracked target.
 function identity(f) {
-  return [f.eventId, f.trackMode || 'name', (f.name || '').toLowerCase(), f.mat ?? '', f.fightNum ?? ''].join('|')
+  return [f.eventId, f.trackMode || 'name', (f.name || '').toLowerCase(), f.discipline || '', f.division || '', f.mat ?? '', f.fightNum ?? ''].join('|')
 }
 
 // Read the full roster as an array of fighter records.

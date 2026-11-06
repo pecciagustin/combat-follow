@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { IconClose } from './icons'
 import { listTournaments } from '../api/tournaments'
+import { divisionLabel } from '../../lib/division.js'
 
 function fighterLabel(f) {
   if (f.trackMode === 'fight') return `Mat ${f.mat} · #${f.fightNum}`
+  if (f.division) return divisionLabel(f.division)
   if (f.discipline) return f.discipline === 'gi' ? 'GI' : 'No-Gi'
   return ''
 }

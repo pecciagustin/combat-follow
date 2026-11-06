@@ -5,6 +5,7 @@ import SetupPanel from './components/SetupPanel'
 import AcademiasPanel from './components/AcademiasPanel'
 import FighterCard from './components/FighterCard'
 import { scrapeAllFighters } from './api/scrape'
+import { normDivision } from '../lib/division.js'
 import QRModal from './components/QRModal'
 import QRScanner from './components/QRScanner'
 import LoginScreen from './components/LoginScreen'
@@ -211,9 +212,10 @@ export default function App() {
         updatedAt: Date.now(),
         fighters: fighters
           .filter((f) => f.eventId === ev.id)
-          .map(({ name, discipline, trackMode, mat, fightNum }) => ({
+          .map(({ name, discipline, division, trackMode, mat, fightNum }) => ({
             name,
             ...(discipline ? { discipline } : {}),
+            ...(division ? { division } : {}),
             ...(trackMode === 'fight' ? { trackMode, mat, fightNum } : {}),
           })),
       }))
@@ -383,10 +385,11 @@ export default function App() {
     }
 
     // Dedupe within the target event. Fighters no longer carry a URL, so the key
-    // is the mat/fight slot (fight mode) or the lowercased name + discipline.
+    // is the mat/fight slot (fight mode) or the lowercased name + discipline +
+    // division (the same athlete can be followed once per bracket).
     const fighterKey = (f) => f.trackMode === 'fight'
       ? `fight:${f.mat}:${f.fightNum}`
-      : `name:${(f.name || '').toLowerCase()}:${f.discipline || ''}`
+      : `name:${(f.name || '').toLowerCase()}:${f.discipline || ''}:${normDivision(f.division)}`
     const existingKeys = new Set(
       fighters.filter((f) => f.eventId === targetId).map(fighterKey)
     )
@@ -395,7 +398,7 @@ export default function App() {
       .map((f) => {
         // Keep only the new model's fields; drop any per-fighter URL.
         if (f.trackMode === 'fight') return { trackMode: 'fight', name: f.name, mat: f.mat, fightNum: f.fightNum }
-        return { name: f.name, discipline: f.discipline || null }
+        return { name: f.name, discipline: f.discipline || null, ...(f.division ? { division: f.division } : {}) }
       })
 
     // Route each import through the server so the per-event quota is enforced;

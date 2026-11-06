@@ -1,3 +1,5 @@
+import { matchesFighterFilter } from '../lib/division.js'
+
 export const config = { runtime: 'edge' }
 
 function fetchWithTimeout(url, ms = 15000) {
@@ -34,14 +36,13 @@ async function getMatData(eventBaseUrl) {
   return results.filter(Boolean)
 }
 
-function findFighter(matData, name, discipline) {
+function findFighter(matData, name, discipline, division) {
   const nameLower = name.toLowerCase()
   const all = []
   for (const { mat, matches } of matData) {
     for (const match of matches) {
       const group = match.group || ''
-      if (discipline === 'nogi' && !/no.?gi/i.test(group)) continue
-      if (discipline === 'gi' && (/no.?gi/i.test(group) || !/\bgi\b/i.test(group))) continue
+      if (!matchesFighterFilter(group, { division, discipline })) continue
       const seats = match.seats || []
       if (!seats.find(s => (s.name || '').toLowerCase().includes(nameLower))) continue
       const opponent = seats.find(s => !(s.name || '').toLowerCase().includes(nameLower))?.name || null
@@ -91,7 +92,7 @@ function formatFighterLine(fighter, matData) {
     const timeStr = data.status === 'live' ? '🔴 En vivo' : data.time ? `🕐 ${data.time}` : ''
     return `${label}\n${names}${timeStr ? '\n' + timeStr : ''}`
   }
-  const data = findFighter(matData, fighter.name, fighter.discipline)
+  const data = findFighter(matData, fighter.name, fighter.discipline, fighter.division)
   if (!data) return `${fighter.name}\nSin combates`
   if (data.status === 'live') return `${fighter.name}\n🔴 En vivo${data.opponent ? ' vs ' + data.opponent : ''}`
   if (data.status === 'finished') return `${fighter.name}\nFinalizado`
