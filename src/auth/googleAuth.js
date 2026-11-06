@@ -85,8 +85,14 @@ export async function verifyWithServer(credential, partnerToken) {
     body: JSON.stringify({ credential, ...(partnerToken ? { partnerToken } : {}) }),
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'No se pudo verificar la sesión')
-  return data // { ok, status, isAdmin, tier, maxFighters, features, scopedEventId, partner, user }
+  if (!res.ok) {
+    const err = new Error(data.error || 'No se pudo verificar la sesión')
+    // 4xx = the server rejected the token (expired/invalid) → sign out.
+    // 5xx = transient server problem → keep the session.
+    err.authRejected = res.status >= 400 && res.status < 500
+    throw err
+  }
+  return data // { ok, sessionToken, status, isAdmin, tier, maxFighters, features, scopedEventId, partner, user }
 }
 
 // Admin-only API. `credential` must belong to the admin account.

@@ -1,4 +1,4 @@
-import { verifyGoogleToken, getRedis, requireApprovedUser } from '../lib/serverAuth.js'
+import { verifyCredential, getRedis, requireApprovedUser } from '../lib/serverAuth.js'
 
 export const config = { runtime: 'edge' }
 
@@ -40,7 +40,7 @@ export default async function handler(req) {
 
   let payload
   try {
-    payload = await verifyGoogleToken(body.credential)
+    payload = await verifyCredential(body.credential)
   } catch {
     return json({ error: 'Token inválido o expirado' }, 401)
   }
