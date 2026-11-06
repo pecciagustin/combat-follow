@@ -20,9 +20,10 @@ function buildPayload(fighters, eventName, eventUrl) {
     ...(eventName ? { eventName } : {}),
     // Match list URL now lives at the event level — shared once for all fighters.
     ...(eventUrl ? { eventUrl } : {}),
-    fighters: fighters.map(({ name, discipline, trackMode, mat, fightNum }) => {
+    fighters: fighters.map(({ name, discipline, division, trackMode, mat, fightNum }) => {
       const f = { name }
       if (discipline) f.discipline = discipline
+      if (division) f.division = division
       if (trackMode) f.trackMode = trackMode
       if (mat) f.mat = mat
       if (fightNum) f.fightNum = fightNum

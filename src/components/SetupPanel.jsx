@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { IconPlus, IconPencil, IconTrash, IconWatch, IconClose, IconScan, IconShare, IconTrophy } from './icons'
 import EventBrowser from './EventBrowser'
+import { findFighterDivisions } from '../api/scrape'
+import { divisionLabel, matchesDiscipline, normDivision } from '../../lib/division.js'
 
 const TIER_LABELS = { fighter: 'Fighter', team: 'Team', official: 'Official' }
 
@@ -28,6 +30,7 @@ function buildWatchUrl(fighters, eventUrl) {
     name: f.name,
     url: eventUrl || '',
     ...(f.discipline ? { discipline: f.discipline } : {}),
+    ...(f.division ? { division: f.division } : {}),
     ...(f.trackMode === 'fight' ? { trackMode: 'fight', mat: f.mat, fightNum: f.fightNum } : {}),
   }))
   const encoded = btoa(JSON.stringify(minimal))
@@ -84,6 +87,10 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
   // fighter form
   const [name, setName] = useState('')
   const [discipline, setDiscipline] = useState('')
+  // Division picker: shown when the athlete is in more than one bracket of the
+  // event (e.g. Unity League NoGi + regular No-Gi), so each can be followed apart.
+  const [divisionPick, setDivisionPick] = useState(null) // { name, discipline, options }
+  const [lookingUp, setLookingUp] = useState(false)
 
   // fight-tracking form
   const [fightLabel, setFightLabel] = useState('')
@@ -97,13 +104,49 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
   const [editFightNum, setEditFightNum] = useState('')
   const [editTrackMode, setEditTrackMode] = useState(null)
 
-  function handleSubmit(e) {
-    e.preventDefault()
-    const trimName = name.trim()
-    if (!trimName) return
-    onAdd({ name: trimName, discipline: discipline || null })
+  function resetFighterForm() {
     setName('')
     setDiscipline('')
+    setDivisionPick(null)
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    const trimName = name.trim()
+    if (!trimName || lookingUp) return
+    // Ask the event which brackets this athlete is in. Only Smoothcomp-based
+    // events can answer (null otherwise); any failure falls back to a plain add.
+    let options
+    setLookingUp(true)
+    try {
+      options = await findFighterDivisions(activeEvent?.matchlistUrl, trimName)
+    } catch {
+      options = null
+    } finally {
+      setLookingUp(false)
+    }
+    if (options && discipline) options = options.filter((o) => matchesDiscipline(o.division, discipline))
+    if (options && options.length > 1) {
+      setDivisionPick({ name: trimName, discipline: discipline || null, options })
+      return
+    }
+    onAdd({ name: trimName, discipline: discipline || null })
+    resetFighterForm()
+  }
+
+  // Divisions of the picked athlete already followed in this event.
+  const followedDivisions = new Set(
+    divisionPick
+      ? fighters
+          .filter((f) => !f.trackMode && f.division && f.name.toLowerCase() === divisionPick.name.toLowerCase())
+          .map((f) => normDivision(f.division))
+      : []
+  )
+
+  function addWithDivision(division) {
+    if (!divisionPick) return
+    onAdd({ name: divisionPick.name, discipline: divisionPick.discipline, ...(division ? { division } : {}) })
+    if (!division) resetFighterForm()
   }
 
   function handleFightSubmit(e) {
@@ -336,7 +379,7 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
               type="text"
               placeholder="Ej: JoelJoan Gallego Marrufo"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); setDivisionPick(null) }}
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="words"
@@ -344,15 +387,55 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
           </div>
           <div className="form-group">
             <label>Disciplina <span style={{ color: 'var(--text-secondary)', fontWeight: 400, textTransform: 'none' }}>(si pelea en las dos)</span></label>
-            <select value={discipline} onChange={(e) => setDiscipline(e.target.value)} style={selectStyle}>
+            <select value={discipline} onChange={(e) => { setDiscipline(e.target.value); setDivisionPick(null) }} style={selectStyle}>
               <option value="">— Cualquiera —</option>
               <option value="gi">GI</option>
               <option value="nogi">No-Gi</option>
             </select>
           </div>
-          <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={!name.trim() || atCap}>
-            + Agregar
-          </button>
+          {divisionPick ? (
+            <div className="division-picker">
+              <div className="division-picker-title">
+                {divisionPick.name} pelea en {divisionPick.options.length} divisiones. Elegí cuál seguir (podés agregar varias):
+              </div>
+              {divisionPick.options.map((o) => {
+                const followed = followedDivisions.has(normDivision(o.division))
+                return (
+                  <div key={o.label} className="division-option">
+                    <div className="division-option-info">
+                      <div className="division-option-label">{o.label}</div>
+                      <div className="division-option-meta">
+                        {o.next
+                          ? [o.next.time, o.next.mat, o.next.fight && `#${o.next.fight}`].filter(Boolean).join(' · ')
+                          : 'Sin combates pendientes'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={followed ? 'btn-ghost' : 'btn-primary'}
+                      style={{ minHeight: 36, fontSize: 12, whiteSpace: 'nowrap' }}
+                      disabled={followed || atCap}
+                      onClick={() => addWithDivision(o.division)}
+                    >
+                      {followed ? '✓ Siguiendo' : '+ Seguir'}
+                    </button>
+                  </div>
+                )
+              })}
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button type="button" className="btn-ghost" style={{ flex: 1, fontSize: 12 }} disabled={atCap} onClick={() => addWithDivision(null)}>
+                  Seguir el próximo combate de cualquiera
+                </button>
+                <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={resetFighterForm}>
+                  Listo
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="submit" className="btn-primary" style={{ width: '100%' }} disabled={!name.trim() || atCap || lookingUp}>
+              {lookingUp ? 'Buscando divisiones…' : '+ Agregar'}
+            </button>
+          )}
           {atCap && <UpsellNotice max={maxFighters} tier={tier} />}
         </form>
       )}
@@ -523,7 +606,12 @@ export default function SetupPanel({ fighters, events = [], scoped = false, acti
                               Mat {f.mat} #{f.fightNum}
                             </span>
                           )}
-                          {!f.trackMode && f.discipline && (
+                          {!f.trackMode && f.division && (
+                            <div className="fighter-item-division" title={divisionLabel(f.division)}>
+                              {divisionLabel(f.division)}
+                            </div>
+                          )}
+                          {!f.trackMode && !f.division && f.discipline && (
                             <span style={{ color: 'var(--text-secondary)', fontWeight: 400, fontSize: 11, marginLeft: 6 }}>
                               ({f.discipline === 'gi' ? 'GI' : 'No-Gi'})
                             </span>

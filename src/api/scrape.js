@@ -1,3 +1,5 @@
+import { matchesFighterFilter, divisionLabel } from '../../lib/division.js'
+
 const PROXY_BASE = '/api/fetch?url='
 
 // Matchlist pages are server-side rendered and CORS-enabled — fetch directly from browser
@@ -128,7 +130,7 @@ function decodeHtmlEntities(str) {
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code)))
 }
 
-function parseMatchlistHtml(html, fighterName, discipline) {
+function parseMatchlistHtml(html, fighterName, discipline, division) {
   const nameLower = fighterName.toLowerCase()
 
   const numbers      = [...html.matchAll(/<div class="number">([^<]+)<\/div>/g)].map(m => ({ pos: m.index, ref: m[1].trim() }))
@@ -143,16 +145,11 @@ function parseMatchlistHtml(html, fighterName, discipline) {
 
   // Filter by discipline (GI/NoGi) first if needed
   let candidates = fighterOccurrences
-  if (fighterOccurrences.length > 1 && discipline) {
-    const isNoGi = discipline === 'nogi'
-    const isGi   = discipline === 'gi'
+  if (fighterOccurrences.length > 1 && (discipline || division)) {
     const filtered = fighterOccurrences.filter(occ => {
       const nearCat = categories.filter(c => c.pos < occ.pos).pop()
       if (!nearCat) return false
-      const c = nearCat.cat.toLowerCase()
-      if (isNoGi) return /no.?gi/i.test(c)
-      if (isGi)   return /\bgi\b/.test(c) && !/no.?gi/i.test(c)
-      return true
+      return matchesFighterFilter(decodeHtmlEntities(nearCat.cat), { division, discipline })
     })
     if (filtered.length) candidates = filtered
   }
@@ -310,16 +307,15 @@ function findFightByCoordInSmooothcompData(matData, mat, fightNum) {
   return null
 }
 
-function findFighterInSmooothcompData(matData, fighterName, discipline) {
+function findFighterInSmooothcompData(matData, fighterName, discipline, division) {
   const nameLower = fighterName.toLowerCase()
   const fighterMatches = []
 
   for (const { mat, matches } of matData) {
     for (const match of matches) {
       const group = match.group || ''
-      // Filter by discipline if specified
-      if (discipline === 'nogi' && !/no.?gi/i.test(group)) continue
-      if (discipline === 'gi' && (/no.?gi/i.test(group) || !/\bgi\b/i.test(group))) continue
+      // Filter by division (exact bracket) or, failing that, by Gi/No-Gi
+      if (!matchesFighterFilter(group, { division, discipline })) continue
 
       const seats = match.seats || []
       const fighterSeat = seats.find(s => (s.name || '').toLowerCase().includes(nameLower))
@@ -506,7 +502,7 @@ export async function scrapeAllFighters(fighters) {
         const baseUrl = extractSmooothcompEventBase(url)
         const renderResults = baseUrl ? eventCache[baseUrl] : null
         if (!renderResults) throw new Error('No se pudo obtener datos del evento')
-        const data = findFighterInSmooothcompData(renderResults, fighter.name, fighter.discipline)
+        const data = findFighterInSmooothcompData(renderResults, fighter.name, fighter.discipline, fighter.division)
         if (data) return { id: fighter.id, data: { ...data, athlete: fighter.name }, error: null }
         return { id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null }
       }
@@ -515,7 +511,7 @@ export async function scrapeAllFighters(fighters) {
       const matchlistUrl = deriveMatchlistUrl(fighter)
       if (!matchlistUrl) throw new Error('No matchlist URL configured')
       const text = await fetchPageText(matchlistUrl)
-      const data = parseMatchlistHtml(text, fighter.name, fighter.discipline)
+      const data = parseMatchlistHtml(text, fighter.name, fighter.discipline, fighter.division)
       if (data && (data.time || data.mat)) return { id: fighter.id, data: { ...data, athlete: fighter.name, status: data.status || 'upcoming', fights: [] }, error: null }
       return { id: fighter.id, data: { athlete: fighter.name, status: 'notfound', fights: [] }, error: null }
     } catch (err) {
@@ -725,4 +721,35 @@ export async function scrapeEventMatches(eventUrl) {
     }
   }
   return { supported: true, matches }
+}
+
+// ── Divisions of one athlete (for the "Agregar luchador" picker) ──────────
+// Lists every bracket (Smoothcomp `group`) the athlete appears in, so the user
+// can follow each one separately — e.g. Unity League NoGi vs. regular No-Gi.
+// Returns null when the event is not Smoothcomp-based (no JSON API to ask).
+// Each entry: { division, label, matches, next: { time, mat, fight } | null }.
+export async function findFighterDivisions(eventUrl, fighterName) {
+  const nameLower = (fighterName || '').trim().toLowerCase()
+  if (!nameLower || !isSmoothcompApiUrl(eventUrl)) return null
+  const { supported, matches } = await scrapeEventMatches(eventUrl)
+  if (!supported) return null
+
+  const byDivision = new Map()
+  for (const m of matches) {
+    if (!m.category) continue
+    if (!m.seats.some((s) => s.name.toLowerCase().includes(nameLower))) continue
+    const key = divisionLabel(m.category)
+    if (!byDivision.has(key)) byDivision.set(key, { division: m.category, label: key, matches: [] })
+    byDivision.get(key).matches.push(m)
+  }
+
+  return [...byDivision.values()]
+    .map(({ division, label, matches: ms }) => {
+      const pending = ms
+        .filter((m) => m.status !== 'finished')
+        .sort((a, b) => (a._start ?? Infinity) - (b._start ?? Infinity))
+      const n = pending[0]
+      return { division, label, matches: ms.length, next: n ? { time: n.time, mat: n.mat, fight: n.fight } : null }
+    })
+    .sort((a, b) => a.label.localeCompare(b.label))
 }
