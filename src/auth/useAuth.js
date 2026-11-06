@@ -10,9 +10,11 @@ import {
 
 // Build the persisted session shape from a credential + /api/auth response.
 // `partner` is only present the first time they arrive through a partner link.
+// `credential` becomes the server's long-lived session token when provided
+// (Google ID tokens expire after ~1h), falling back to the token we sent.
 function sessionFromRes(credential, res, prevPartner) {
   return {
-    credential,
+    credential: res.sessionToken || credential,
     user: res.user,
     status: res.status,
     isAdmin: res.isAdmin,
@@ -84,9 +86,12 @@ export function useAuth() {
         if (cancelled) return
         applySession(sessionFromRes(stored.credential, res, stored.partner))
       })
-      .catch(() => {
-        // Token expired or invalid → require a fresh sign-in.
-        if (!cancelled) applySession(null)
+      .catch((err) => {
+        // Token expired or invalid → require a fresh sign-in. On a network
+        // failure (offline, flaky mobile signal) keep the stored session
+        // instead of logging the user out.
+        if (cancelled) return
+        if (err?.authRejected) applySession(null)
       })
       .finally(() => { if (!cancelled) setChecking(false) })
     return () => { cancelled = true }

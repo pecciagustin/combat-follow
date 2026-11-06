@@ -1,5 +1,5 @@
 import {
-  verifyGoogleToken,
+  verifyCredential,
   getRedis,
   listUsers,
   setUserStatus,
@@ -44,7 +44,7 @@ export default async function handler(req) {
   // Verify the caller and enforce that they are the admin.
   let payload
   try {
-    payload = await verifyGoogleToken(body.credential)
+    payload = await verifyCredential(body.credential)
   } catch {
     return json({ error: 'Token inválido o expirado' }, 401)
   }

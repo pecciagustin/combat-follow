@@ -1,4 +1,4 @@
-import { verifyGoogleToken, getRedis, recordLogin, joinPartner, getPartner } from '../lib/serverAuth.js'
+import { verifyCredential, issueSessionToken, getRedis, recordLogin, joinPartner, getPartner } from '../lib/serverAuth.js'
 
 export const config = { runtime: 'edge' }
 
@@ -30,7 +30,7 @@ export default async function handler(req) {
 
   let payload
   try {
-    payload = await verifyGoogleToken(credential)
+    payload = await verifyCredential(credential)
   } catch {
     return json({ error: 'Token inválido o expirado' }, 401)
   }
@@ -62,8 +62,14 @@ export default async function handler(req) {
       if (p) partner = { eventId: p.eventId, eventName: p.eventName, matchlistUrl: p.matchlistUrl }
     }
 
+    // Long-lived device session (renewed on every app open) so the installed
+    // PWA does not need a new Google sign-in once the 1h Google token expires.
+    // Blocked accounts get no session.
+    const sessionToken = user.status === 'blocked' ? null : await issueSessionToken(payload)
+
     return json({
       ok: true,
+      sessionToken,
       status: user.status,
       isAdmin: user.isAdmin,
       tier: user.tier,
